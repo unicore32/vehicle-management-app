@@ -1,13 +1,17 @@
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as NavigationBar from 'expo-navigation-bar';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { TamaguiProvider } from 'tamagui';
 
 // バックグラウンドタスクはモジュール import の副作用として登録される
 // アプリが OS により再起動された際もタスク定義が復元されるよう、
 // ルートレイアウトで必ず import する
+import { installAppLogCapture } from '../lib/app-log-capture';
 import '../tasks/location-task';
 
 import tamaguiConfig from '../tamagui.config';
@@ -21,26 +25,35 @@ const queryClient = new QueryClient({
   },
 });
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
-
 export default function RootLayout() {
+  useEffect(() => {
+    installAppLogCapture();
+    NavigationBar.setBackgroundColorAsync('#0d1117').catch(() => {});
+    NavigationBar.setButtonStyleAsync('light').catch(() => {});
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
-      {/* 車・バイクでの夜間使用を想定し、デバイス設定に関わらず常にダークテーマで表示 */}
-      <TamaguiProvider config={tamaguiConfig} defaultTheme="dark">
-        <ThemeProvider value={DarkTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="modal"
-              options={{ presentation: 'modal', title: 'Modal' }}
-            />
-          </Stack>
-          <StatusBar style="light" />
-        </ThemeProvider>
-      </TamaguiProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <TamaguiProvider config={tamaguiConfig} defaultTheme="dark">
+          <ThemeProvider value={DarkTheme}>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen
+                name="sessions/index"
+                options={{ headerShown: true, title: 'セッション一覧' }}
+              />
+              <Stack.Screen name="settings" />
+              {/* Phase 4: セッション詳細 */}
+              <Stack.Screen
+                name="session/[id]"
+                options={{ headerShown: true, title: 'セッション詳細' }}
+              />
+            </Stack>
+            <StatusBar style="light" />
+          </ThemeProvider>
+        </TamaguiProvider>
+      </GestureHandlerRootView>
     </QueryClientProvider>
   );
 }
