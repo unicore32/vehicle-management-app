@@ -1,24 +1,19 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { LOCATION_TASK_NAME } from '../constants/task-names';
+import { getRecordingIntervalS, RECORDING_INTERVAL_S_DEFAULT } from '../lib/app-state-store';
+import { gpsDebug } from '../lib/gps-debug';
+import { computeSessionStats } from '../lib/session-points-store';
+import {
+  createSession,
+  finishSession,
+  getActiveSession,
+  updateSessionStatus,
+} from '../lib/session-store';
 
-// ─── Skill 実装 ───────────────────────────────────────────────────────────────
+// ─── 権限チェック ─────────────────────────────────────────────────────────────
 
-/**
- * @skill manage_background_service
- * @description バックグラウンド GPS 記録を開始する。
- *   Android では expo-location の foregroundService オプションが
- *   Foreground Service 通知を自動発行し OS によるプロセスキルを防ぐ。
- *   （expo-notifications は不要: expo-location が内部で管理する）
- *
- *   前景・バックグラウンド位置情報の両権限を要求し、
- *   いずれか未付与の場合は Error をスローする。
- *
- * @throws {Error} 位置情報権限が拒否された場合
- * @returns {Promise<void>}
- */
-export async function startBackgroundLocationService(): Promise<void> {
-  // ── 前景権限の要求 ──────────────────────────────────────────────────────────
+async function requestLocationPermissions(): Promise<void> {
   const { status: fgStatus } =
     await Location.requestForegroundPermissionsAsync();
   if (fgStatus !== 'granted') {
@@ -27,7 +22,6 @@ export async function startBackgroundLocationService(): Promise<void> {
     );
   }
 
-  // ── バックグラウンド権限の要求 ─────────────────────────────────────────────
   const { status: bgStatus } =
     await Location.requestBackgroundPermissionsAsync();
   if (bgStatus !== 'granted') {
@@ -35,44 +29,102 @@ export async function startBackgroundLocationService(): Promise<void> {
       'バックグラウンド位置情報の許可が必要です。設定から「常に許可」を選択してください。',
     );
   }
+}
 
-  // ── バックグラウンドタスクの開始 ───────────────────────────────────────────
+// ─── バックグラウンドタスク制御 ───────────────────────────────────────────────
+
+async function startLocationUpdates(): Promise<void> {
+  const recordingIntervalS = await getRecordingIntervalS().catch(() => RECORDING_INTERVAL_S_DEFAULT);
+  gpsDebug('starting location updates', { taskName: LOCATION_TASK_NAME });
   await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
     accuracy: Location.Accuracy.BestForNavigation,
-    timeInterval: 5_000,   // 5 秒ごと（車・バイク向け）
+    timeInterval: recordingIntervalS * 1_000,
     distanceInterval: 10,  // または 10 m 移動ごと
-    // Android: expo-location が内部でチャンネルを作成し Foreground Service 通知を発行する
-    // development build が必要（Expo Go 非対応）
     foregroundService: {
       notificationTitle: 'GPS 記録中',
       notificationBody: 'バックグラウンドで走行ログを記録しています',
       notificationColor: '#0a7ea4',
     },
-    // Android: アクティビティ認識による自動一時停止を無効化
-    // 停車中でも一定間隔で位置を記録し続ける
     pausesUpdatesAutomatically: false,
-    showsBackgroundLocationIndicator: true, // iOS: バックグラウンド使用中インジケーター
+    showsBackgroundLocationIndicator: true,
   });
 }
 
-/**
- * @skill manage_background_service
- * @description バックグラウンド GPS 記録を停止する。
- *   タスクが未登録の場合は何もしない（冪等性を保証）。
- * @returns {Promise<void>}
- */
-export async function stopBackgroundLocationService(): Promise<void> {
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(
-    LOCATION_TASK_NAME,
-  );
+async function stopLocationUpdates(): Promise<void> {
+  const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
   if (isRegistered) {
+    gpsDebug('stopping location updates', { taskName: LOCATION_TASK_NAME });
     await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
   }
 }
 
+// ─── セッションライフサイクル ─────────────────────────────────────────────────
+
 /**
- * バックグラウンド記録が現在アクティブかどうかを返す。
+ * @skill manage_background_service
+ * @description 新しいセッションを作成してバックグラウンド GPS 記録を開始する。
+ *
+ * @returns 作成したセッション ID
+ * @throws 位置情報権限が拒否された場合
  */
-export async function isRecordingActive(): Promise<boolean> {
+export async function startRecordingService(): Promise<number> {
+  await requestLocationPermissions();
+  const sessionId = await createSession();
+  gpsDebug('recording started', { sessionId });
+  await startLocationUpdates();
+  return sessionId;
+}
+
+/**
+ * @skill manage_background_service
+ * @description 現在のセッションを一時停止する。
+ *   セッションは残ったまま、バックグラウンドタスクのみ停止する。
+ *
+ * @param sessionId 対象セッション ID
+ */
+export async function pauseRecordingService(sessionId: number): Promise<void> {
+  await stopLocationUpdates();
+  await updateSessionStatus(sessionId, 'paused', 'user_pause');
+  gpsDebug('recording paused', { sessionId, reason: 'user_pause' });
+}
+
+/**
+ * @skill manage_background_service
+ * @description 一時停止中のセッションを再開する。
+ *
+ * @param sessionId 対象セッション ID
+ */
+export async function resumeRecordingService(sessionId: number): Promise<void> {
+  await requestLocationPermissions();
+  await updateSessionStatus(sessionId, 'recording');
+  await startLocationUpdates();
+  gpsDebug('recording resumed', { sessionId });
+}
+
+/**
+ * @skill manage_background_service
+ * @description セッションを完了して GPS 記録を終了する。
+ *   最終統計を計算して sessions テーブルに書き込む。
+ *
+ * @param sessionId 対象セッション ID
+ */
+export async function stopRecordingService(sessionId: number): Promise<void> {
+  await stopLocationUpdates();
+  const stats = await computeSessionStats(sessionId);
+  await finishSession(sessionId, stats);
+  gpsDebug('recording stopped', { sessionId, stats });
+}
+
+/**
+ * バックグラウンドタスクが現在登録（実行中）かどうかを返す。
+ * アプリ起動時の状態復元に使用する。
+ */
+export async function isBackgroundTaskRunning(): Promise<boolean> {
   return TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
 }
+
+/**
+ * アクティブセッション（recording / paused）が存在すれば返す。
+ * アプリ起動時のクラッシュリカバリに使用する。
+ */
+export { getActiveSession };

@@ -7,6 +7,7 @@ If a tool-specific rule file exists, it should defer to this file.
 ## Source of Truth
 - Use this file as the canonical instruction set.
 - Do not create parallel rule systems that duplicate or contradict this file.
+- For feature work, check the relevant file under specs/ first, keep the implementation aligned with it, and update the spec in the same change if the behavior needs to change.
 
 ## Stack
 - Expo + React Native + TypeScript
