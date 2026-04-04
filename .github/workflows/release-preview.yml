@@ -1,0 +1,73 @@
+name: Release Preview APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Expo auth
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eas-cli whoami
+
+      - name: Build Android APK (local)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_LOCAL_BUILD_ARTIFACTS_DIR: build-artifacts
+        run: npx eas-cli build --platform android --profile preview --local --non-interactive
+
+      - name: Locate APK
+        id: locate_apk
+        run: |
+          apk_path=$(find build-artifacts -type f -name '*.apk' | head -n 1)
+          if [ -z "$apk_path" ]; then
+            echo 'No APK found in build-artifacts.'
+            exit 1
+          fi
+          echo "apk_path=$apk_path" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-apk-${{ github.ref_name }}
+          path: ${{ steps.locate_apk.outputs.apk_path }}
+
+      - name: Create prerelease and attach APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          prerelease: true
+          generate_release_notes: true
+          files: ${{ steps.locate_apk.outputs.apk_path }}
