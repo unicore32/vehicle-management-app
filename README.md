@@ -1,50 +1,60 @@
-# Welcome to your Expo app 👋
+# vehicle-management-app
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+![CI](https://github.com/unicore32/vehicle-management-app/actions/workflows/ci.yml/badge.svg)
 
-## Get started
+Personal-use GPS logger and vehicle management app (in active development).
 
-1. Install dependencies
+## TL;DR
+- Purpose: record trip location history in background and expand into vehicle management.
+- Current state: GPS logging, SQLite persistence, route map, tests, and CI are in place.
+- Quality gate: run `pnpm run check` before pushing.
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
+## Quick Start
 ```bash
-npm run reset-project
+pnpm install
+pnpm run android
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Daily Commands
+```bash
+pnpm run lint
+pnpm run typecheck
+pnpm run test
+pnpm run check
+pnpm run format
+```
 
-## Learn more
+## Constraints
+- Development build is required for native features like background task + MapLibre.
+- Expo Go is not the target runtime for this app.
+- Background logging requires foreground/background location permissions.
+- Local Node 24 is acceptable; CI is pinned to Node 22.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Architecture
+- `app/`: route screens and composition.
+- `components/`: reusable UI components.
+- `hooks/`: UI orchestration and query wiring.
+- `services/`: Expo/OS integration logic.
+- `tasks/`: background task definitions.
+- `lib/`: persistence and domain logic.
+- `lib/database/`: schema/bootstrap/migration-related setup.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Data Snapshot
+- Database: `gps_logger.db` via `expo-sqlite`.
+- Main table: `locations`.
+- Core fields: `latitude`, `longitude`, `altitude`, `accuracy`, `speed`, `timestamp`, `created_at`.
 
-## Join the community
+## Versioning (Development Stage)
+- App version (`app.json`): `0.1.0`.
+- EAS version source: `remote`.
+- `preview` and `production` builds use `autoIncrement` for build numbers.
 
-Join our community of developers creating universal apps.
+## Current State (for LLM Handoff)
+- CI workflow: `.github/workflows/ci.yml`.
+- CI checks: `lint`, `typecheck`, `test`.
+- Latest verified local check: `pnpm run check` passed.
+- Agent rules source of truth: `AGENTS.md`.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Next TODO
+- [ ] Add vehicle-centric domain model (vehicle/trip/fuel/maintenance).
+- [ ] Add export feature (CSV/GPX).

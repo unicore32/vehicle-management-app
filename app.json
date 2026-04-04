@@ -2,14 +2,26 @@
   "expo": {
     "name": "vehicle-management-app",
     "slug": "vehicle-management-app",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "vehiclemanagementapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "走行ログを記録するために位置情報を使用します。",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "バックグラウンドでも走行ログを記録するために位置情報を使用します。",
+        "NSLocationAlwaysUsageDescription": "バックグラウンドでも走行ログを記録するために位置情報を使用します。",
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "location",
+          "fetch"
+        ]
+      },
+      "bundleIdentifier": "com.anonymous.vehiclemanagementapp"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +31,15 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
+      ],
+      "package": "com.anonymous.vehiclemanagementapp"
     },
     "web": {
       "output": "static",
@@ -38,11 +58,27 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "バックグラウンドでも走行ログを記録するために位置情報を使用します。",
+          "locationWhenInUsePermission": "走行ログを記録するために位置情報を使用します。",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "@maplibre/maplibre-react-native"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3ada58b1-ad77-44b8-910c-6339b418d354"
+      }
     }
   }
 }

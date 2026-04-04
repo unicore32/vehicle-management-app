@@ -1,98 +1,151 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { Alert, ScrollView, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, View, YStack, XStack, Card, Button } from 'tamagui';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { useGPSLogger } from '../../hooks/use-gps-logger';
+import {
+  useLocationCount,
+  useLocationHistory,
+  useClearLocations,
+} from '../../hooks/use-location-history';
+import { RecordingButton } from '../../components/gps/recording-button';
+import { LocationStats } from '../../components/gps/location-stats';
+import { LocationMap } from '../../components/gps/location-map';
 
-export default function HomeScreen() {
+export default function GPSDashboardScreen() {
+  const { isRecording, isLoading, error, startRecording, stopRecording } =
+    useGPSLogger();
+
+  const { data: count } = useLocationCount(isRecording);
+  const { data: locations = [] } = useLocationHistory(50);
+  const { mutate: clearAll, isPending: isClearing } = useClearLocations();
+
+  const handleToggle = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const handleClear = () => {
+    Alert.alert(
+      '記録を削除',
+      '保存済みの全 GPS ログを削除しますか？この操作は元に戻せません。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除', style: 'destructive', onPress: () => clearAll() },
+      ],
+    );
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <YStack gap="$4" paddingHorizontal="$4" paddingTop="$4" paddingBottom="$8">
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+          {/* ヘッダー */}
+          <YStack gap="$1">
+            <Text style={styles.title}>GPS ロガー</Text>
+            <XStack alignItems="center" gap="$2">
+              <View
+                width={8}
+                height={8}
+                borderRadius={4}
+                backgroundColor={isRecording ? '#22c55e' : '#555'}
+                animation="bouncy"
+              />
+              <Text style={styles.statusLabel}>
+                {isRecording ? '記録中' : '待機中'}
+              </Text>
+            </XStack>
+          </YStack>
+
+          {/* エラー表示 */}
+          {error != null && (
+            <Card style={styles.errorCard}>
+              <Text style={styles.errorText}>{error}</Text>
+            </Card>
+          )}
+
+          {/* 記録ボタン */}
+          <RecordingButton
+            isRecording={isRecording}
+            isLoading={isLoading}
+            onPress={handleToggle}
+          />
+
+          {/* 統計情報 */}
+          <LocationStats
+            count={count}
+            isRecording={isRecording}
+            latestLocation={locations[0]}
+          />
+
+          {/* 地図表示 */}
+          {locations.length > 0 && (
+            <YStack gap="$2">
+              <Text style={styles.sectionLabel}>走行ルート（直近 50 件）</Text>
+              <LocationMap locations={locations} />
+            </YStack>
+          )}
+
+          {/* 記録クリアボタン */}
+          {(count ?? 0) > 0 && (
+            <Button
+              size="$3"
+              chromeless
+              borderWidth={1}
+              borderColor="#7f1d1d"
+              color="#f87171"
+              disabled={isClearing}
+              onPress={handleClear}
+              testID="clear-button"
+            >
+              {isClearing ? 'クリア中...' : '全記録を削除'}
+            </Button>
+          )}
+        </YStack>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0d0d0d',
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  scrollContent: {
+    flexGrow: 1,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  title: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#f1f5f9',
+    letterSpacing: -0.5,
+  },
+  statusLabel: {
+    fontSize: 13,
+    color: '#94a3b8',
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  errorCard: {
+    backgroundColor: '#2d1515',
+    borderWidth: 1,
+    borderColor: '#7f1d1d',
+    borderRadius: 8,
+    padding: 12,
+  },
+  errorText: {
+    color: '#fca5a5',
+    fontSize: 13,
   },
 });
