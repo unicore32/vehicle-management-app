@@ -1,8 +1,10 @@
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as NavigationBar from 'expo-navigation-bar';
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
@@ -16,6 +18,8 @@ import '../tasks/location-task';
 
 import tamaguiConfig from '../tamagui.config';
 
+SplashScreen.preventAutoHideAsync();
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -26,10 +30,17 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
+  const pathname = usePathname();
+  const isRecordingScreen = pathname === '/' || pathname === '/index';
+
   useEffect(() => {
     installAppLogCapture();
-    NavigationBar.setBackgroundColorAsync('#0d1117').catch(() => {});
-    NavigationBar.setButtonStyleAsync('light').catch(() => {});
+    SplashScreen.hideAsync();
+  }, []);
+
+  useEffect(() => {
+    NavigationBar.setStyle('light');
+    SystemUI.setBackgroundColorAsync('#081420').catch(() => {});
   }, []);
 
   return (
@@ -50,7 +61,7 @@ export default function RootLayout() {
                 options={{ headerShown: true, title: 'セッション詳細' }}
               />
             </Stack>
-            <StatusBar style="light" />
+            <StatusBar style={isRecordingScreen ? 'dark' : 'light'} />
           </ThemeProvider>
         </TamaguiProvider>
       </GestureHandlerRootView>
