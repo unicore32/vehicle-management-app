@@ -34,14 +34,32 @@ function makeWrapper() {
 
 /** テスト用の最小セッションオブジェクト */
 function session(partial: Pick<Session, 'id' | 'status'>): Session {
-  return partial as Session;
+  return {
+    id: partial.id,
+    started_at: 1_700_000_000_000,
+    ended_at: null,
+    status: partial.status,
+    is_background_active: 0,
+    paused_reason: null,
+    distance_m: 0,
+    moving_time_s: 0,
+    avg_speed: 0,
+    max_speed: 0,
+    point_count: 0,
+    note: null,
+    created_at: 1_700_000_000_000,
+    updated_at: 1_700_000_000_000,
+  };
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(gpsService.getActiveSession).mockResolvedValue(null);
   jest.mocked(gpsService.isBackgroundTaskRunning).mockResolvedValue(false);
-  jest.mocked(gpsService.startRecordingService).mockResolvedValue(1);
+  jest.mocked(gpsService.startRecordingService).mockResolvedValue({
+    id: 1,
+    started_at: 1_700_000_000_000,
+  });
   jest.mocked(gpsService.pauseRecordingService).mockResolvedValue(undefined);
   jest.mocked(gpsService.resumeRecordingService).mockResolvedValue(undefined);
   jest.mocked(gpsService.stopRecordingService).mockResolvedValue(undefined);
@@ -58,6 +76,7 @@ describe('initial state restoration', () => {
 
     await waitFor(() => expect(result.current.status).toBe('idle'));
     expect(result.current.activeSessionId).toBeNull();
+    expect(result.current.activeSessionStartedAt).toBeNull();
   });
 
   it('restores to paused when a paused session exists', async () => {
@@ -67,6 +86,7 @@ describe('initial state restoration', () => {
 
     await waitFor(() => expect(result.current.status).toBe('paused'));
     expect(result.current.activeSessionId).toBe(5);
+    expect(result.current.activeSessionStartedAt).toBe(1_700_000_000_000);
   });
 
   it('restores to recording when session is recording AND task is running', async () => {
@@ -77,6 +97,7 @@ describe('initial state restoration', () => {
 
     await waitFor(() => expect(result.current.status).toBe('recording'));
     expect(result.current.activeSessionId).toBe(3);
+    expect(result.current.activeSessionStartedAt).toBe(1_700_000_000_000);
   });
 
   it('crash recovery: recording session but task stopped → restores to paused', async () => {
@@ -87,6 +108,7 @@ describe('initial state restoration', () => {
 
     await waitFor(() => expect(result.current.status).toBe('paused'));
     expect(result.current.activeSessionId).toBe(9);
+    expect(result.current.activeSessionStartedAt).toBe(1_700_000_000_000);
     expect(sessionStore.updateSessionStatus).toHaveBeenCalledWith(9, 'paused', 'crash_recovery');
   });
 });
@@ -95,7 +117,10 @@ describe('initial state restoration', () => {
 
 describe('start()', () => {
   it('transitions idle → recording and sets activeSessionId', async () => {
-    jest.mocked(gpsService.startRecordingService).mockResolvedValue(42);
+    jest.mocked(gpsService.startRecordingService).mockResolvedValue({
+      id: 42,
+      started_at: 1_700_123_456_000,
+    });
 
     const { result } = renderHook(() => useSessionRecording(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.status).toBe('idle'));
@@ -104,6 +129,7 @@ describe('start()', () => {
 
     expect(result.current.status).toBe('recording');
     expect(result.current.activeSessionId).toBe(42);
+    expect(result.current.activeSessionStartedAt).toBe(1_700_123_456_000);
     expect(result.current.error).toBeNull();
   });
 
@@ -118,6 +144,7 @@ describe('start()', () => {
     await act(async () => { await result.current.start(); });
 
     expect(result.current.status).toBe('idle');
+    expect(result.current.activeSessionStartedAt).toBeNull();
     expect(result.current.error).toBe('権限が拒否されました');
   });
 });
@@ -196,6 +223,7 @@ describe('stop()', () => {
 
     expect(result.current.status).toBe('idle');
     expect(result.current.activeSessionId).toBeNull();
+    expect(result.current.activeSessionStartedAt).toBeNull();
     expect(gpsService.stopRecordingService).toHaveBeenCalledWith(3);
   });
 
@@ -209,6 +237,7 @@ describe('stop()', () => {
 
     expect(result.current.status).toBe('idle');
     expect(result.current.activeSessionId).toBeNull();
+    expect(result.current.activeSessionStartedAt).toBeNull();
   });
 
   it('falls back to paused on stop failure', async () => {

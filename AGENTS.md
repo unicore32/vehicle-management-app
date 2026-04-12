@@ -8,6 +8,7 @@ If a tool-specific rule file exists, it should defer to this file.
 - Use this file as the canonical instruction set.
 - Do not create parallel rule systems that duplicate or contradict this file.
 - For feature work, check the relevant file under specs/ first, keep the implementation aligned with it, and update the spec in the same change if the behavior needs to change.
+- When implementation changes affect user-facing behavior, map interaction, data flow expectations, or workflow rules, reflect that in the relevant file under specs/ as part of the same task.
 
 ## Stack
 - Expo + React Native + TypeScript
@@ -21,6 +22,9 @@ Run these commands before finalizing substantial code changes:
 - `pnpm run lint`
 - `pnpm run typecheck`
 - `pnpm run test`
+
+When a change adds or updates files under `specs/`, also run:
+- `pnpm run lint:docs`
 
 Useful commands:
 - `pnpm run lint:fix`

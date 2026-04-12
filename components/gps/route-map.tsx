@@ -6,7 +6,7 @@
  *    モジュールが取得できない場合はプレースホルダーを表示する。
  */
 import type MapLibreModule from '@maplibre/maplibre-react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -103,6 +103,17 @@ function extractCenterCoordinate(event: unknown): [number, number] | null {
   return null;
 }
 
+function extractZoomLevel(event: unknown): number | null {
+  if (typeof event !== 'object' || event === null) return null;
+
+  const candidate = event as {
+    properties?: { zoomLevel?: unknown; zoom?: unknown };
+  };
+
+  const zoomCandidate = candidate.properties?.zoomLevel ?? candidate.properties?.zoom;
+  return typeof zoomCandidate === 'number' ? zoomCandidate : null;
+}
+
 function isOutsideRecenterThreshold(
   centerCoordinate: [number, number],
   currentLocation: CurrentLocation,
@@ -134,49 +145,94 @@ function MapUnavailablePlaceholder({ style }: { style?: StyleProp<ViewStyle> }) 
  * - style prop でコンテナサイズを自由に制御可能
  */
 export function RouteMap({ points, currentLocation, style, recenterBottomOffset = 0 }: Props) {
-  const [cameraResetVersion, setCameraResetVersion] = useState(0);
+  const latest = points.length > 0 ? points[points.length - 1] : null;
+  const initialCenter: [number, number] = currentLocation !== null && currentLocation !== undefined
+    ? [currentLocation.longitude, currentLocation.latitude]
+    : latest !== null
+      ? [latest.longitude, latest.latitude]
+      : DEFAULT_CENTER;
+  const initialZoom = currentLocation !== null && currentLocation !== undefined
+    ? 16
+    : latest !== null
+      ? 14
+      : DEFAULT_ZOOM;
+
+  const [isFollowingUser, setIsFollowingUser] = useState(
+    currentLocation !== null && currentLocation !== undefined,
+  );
+  const [cameraCenter, setCameraCenter] = useState<[number, number]>(initialCenter);
+  const [cameraZoom, setCameraZoom] = useState(initialZoom);
   const [showRecenterButton, setShowRecenterButton] = useState(false);
   const { top, bottom } = useSafeAreaInsets();
 
-  if (MapLibreGL === null) {
-    return <MapUnavailablePlaceholder style={style} />;
-  }
-
-  const latest = points.length > 0 ? points[points.length - 1] : null;
-  const center: [number, number] = currentLocation !== null && currentLocation !== undefined
+  const followTargetCenter: [number, number] = currentLocation !== null && currentLocation !== undefined
     ? [currentLocation.longitude, currentLocation.latitude]
     : latest
       ? [latest.longitude, latest.latitude]
       : DEFAULT_CENTER;
-  const zoom = currentLocation !== null && currentLocation !== undefined
-    ? 16
-    : latest
-      ? 14
-      : DEFAULT_ZOOM;
-  const tileServerKey = resolveTileServerKey(center);
+  const tileServerKey = resolveTileServerKey(cameraCenter);
   const mapStyle = JSON.stringify(buildRasterStyle(tileServerKey));
-  const cameraKey = `${center[0]}:${center[1]}:${zoom}:${cameraResetVersion}`;
   const compassMarginTop = top + 12;
   const attributionTop = top + 72;
   const recenterBottom = recenterBottomOffset > 0
     ? recenterBottomOffset + 8
     : bottom + 8;
 
+  useEffect(() => {
+    if (currentLocation !== null && currentLocation !== undefined && !showRecenterButton) {
+      setIsFollowingUser(true);
+    }
+  }, [currentLocation, showRecenterButton]);
+
+  useEffect(() => {
+    if (!isFollowingUser) return;
+    setCameraCenter((previousCenter) => {
+      if (
+        previousCenter[0] === followTargetCenter[0]
+        && previousCenter[1] === followTargetCenter[1]
+      ) {
+        return previousCenter;
+      }
+
+      return followTargetCenter;
+    });
+  }, [followTargetCenter[0], followTargetCenter[1], isFollowingUser]);
+
+  if (MapLibreGL === null) {
+    return <MapUnavailablePlaceholder style={style} />;
+  }
+
   function handleRegionDidChange(event: unknown) {
+    const centerCoordinate = extractCenterCoordinate(event);
+    const zoomLevel = extractZoomLevel(event);
+
+    if (centerCoordinate !== null) {
+      setCameraCenter(centerCoordinate);
+    }
+    if (zoomLevel !== null) {
+      setCameraZoom(zoomLevel);
+    }
+
     if (currentLocation === null || currentLocation === undefined) {
       setShowRecenterButton(false);
       return;
     }
 
-    const centerCoordinate = extractCenterCoordinate(event);
     if (centerCoordinate === null) return;
 
-    setShowRecenterButton(isOutsideRecenterThreshold(centerCoordinate, currentLocation));
+    const shouldShowRecenter = isOutsideRecenterThreshold(centerCoordinate, currentLocation);
+    setShowRecenterButton(shouldShowRecenter);
+    if (shouldShowRecenter) {
+      setIsFollowingUser(false);
+    }
   }
 
   function handleRecenterPress() {
+    if (currentLocation === null || currentLocation === undefined) return;
+
     setShowRecenterButton(false);
-    setCameraResetVersion((version) => version + 1);
+    setIsFollowingUser(true);
+    setCameraCenter([currentLocation.longitude, currentLocation.latitude]);
   }
 
   return (
@@ -192,9 +248,8 @@ export function RouteMap({ points, currentLocation, style, recenterBottomOffset 
         testID="route-map"
       >
         <MapLibreGL.Camera
-          key={cameraKey}
-          centerCoordinate={center}
-          zoomLevel={zoom}
+          centerCoordinate={cameraCenter}
+          zoomLevel={cameraZoom}
           animationMode="moveTo"
           testID="route-map-camera"
         />
@@ -206,7 +261,7 @@ export function RouteMap({ points, currentLocation, style, recenterBottomOffset 
               id="route-line"
               style={{
                 lineColor: '#3b82f6',
-                lineWidth: 3,
+                lineWidth: 5,
                 lineOpacity: 0.9,
               }}
             />
@@ -214,7 +269,7 @@ export function RouteMap({ points, currentLocation, style, recenterBottomOffset 
         )}
 
         {/* 最新ポイントマーカー */}
-        {latest !== null && (
+        {latest !== null && (currentLocation === null || currentLocation === undefined) && (
           <MapLibreGL.ShapeSource id="latest-source" shape={toPointGeoJSON(latest)}>
             <MapLibreGL.CircleLayer
               id="latest-circle"

@@ -25,7 +25,9 @@ import {
     getAutoPauseEnabledSync,
     getAutoPauseThresholdSSync,
     getGapThresholdSSync,
+    getGpsLoggingEnabledSync,
 } from '../lib/app-state-store';
+  import { appendDebugLogSync } from '../lib/debug-log-store';
 import {
     CREATE_APP_STATE_TABLE,
     CREATE_SESSIONS_TABLE,
@@ -44,13 +46,34 @@ type TaskExecutorBody<T> = {
   error: TaskManager.TaskManagerError | null;
 };
 
+type DebugDetails = Record<string, unknown>;
+
 function taskDebug(message: string, details?: Record<string, unknown>): void {
-  if (!__DEV__) return;
-  if (details === undefined) {
-    console.debug(`[GPS][TASK] ${message}`);
-    return;
+  try {
+    if (details === undefined) {
+      console.debug(`[GPS][TASK] ${message}`);
+    } else {
+      console.debug(`[GPS][TASK] ${message}`, details);
+    }
+
+    const db = getTaskDatabaseSync();
+    if (!getGpsLoggingEnabledSync(db)) return;
+
+    appendDebugLogSync(db, {
+      message: `[GPS][TASK] ${message}`,
+      details: details === undefined ? null : stringifyDetails(details),
+    });
+  } catch {
+    // ベストエフォートで task 内ログを残す
   }
-  console.debug(`[GPS][TASK] ${message}`, details);
+}
+
+function stringifyDetails(details: DebugDetails): string {
+  try {
+    return JSON.stringify(details);
+  } catch {
+    return '[unserializable details]';
+  }
 }
 
 let taskDb: SQLite.SQLiteDatabase | null = null;

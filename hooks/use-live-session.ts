@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  getSessionPoints,
+  getRecentSessionPoints,
   getLatestSessionPoint,
   computeLiveDistance,
 } from '../lib/session-points-store';
@@ -24,7 +24,7 @@ export function useLiveSessionPoints(
 ) {
   return useQuery({
     queryKey: [SESSION_POINTS_QUERY_KEY, sessionId, 'map'],
-    queryFn: () => getSessionPoints(sessionId!, MAP_POINT_LIMIT),
+    queryFn: () => getRecentSessionPoints(sessionId!, MAP_POINT_LIMIT),
     enabled: sessionId !== null,
     refetchInterval: isRecording ? LIVE_POLL_INTERVAL : false,
     staleTime: LIVE_POLL_INTERVAL,

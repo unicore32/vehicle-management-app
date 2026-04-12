@@ -30,6 +30,11 @@ export type SessionStats = {
   point_count: number;
 };
 
+export type CreatedSession = {
+  id: number;
+  started_at: number;
+};
+
 // ─── 書き込み ─────────────────────────────────────────────────────────────────
 
 /**
@@ -37,6 +42,14 @@ export type SessionStats = {
  * GPS 記録開始時に呼ぶ。
  */
 export async function createSession(): Promise<number> {
+  return (await createSessionRecord()).id;
+}
+
+/**
+ * 新しいセッションを作成し、ID と started_at を返す。
+ * 開始直後の UI が points 到着を待たずに安定表示できるようにする。
+ */
+export async function createSessionRecord(): Promise<CreatedSession> {
   const db = await getDatabase();
   const now = Date.now();
   const result = await db.runAsync(
@@ -47,7 +60,10 @@ export async function createSession(): Promise<number> {
      VALUES (?, 'recording', 0, 0, 0, 0, 0, 0, ?, ?)`,
     now, now, now,
   );
-  return result.lastInsertRowId;
+  return {
+    id: result.lastInsertRowId,
+    started_at: now,
+  };
 }
 
 /**

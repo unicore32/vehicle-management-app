@@ -80,6 +80,7 @@ describe('RouteMap', () => {
 
     expect(cameras[0].props.centerCoordinate).toEqual([139.5, 35.5]);
     expect(circles.map((circle) => circle.props.id as string)).toContain('current-location-circle');
+    expect(circles.map((circle) => circle.props.id as string)).not.toContain('latest-circle');
   });
 
   it('renders a LineLayer when there are 2 or more points', () => {
@@ -125,6 +126,51 @@ describe('RouteMap', () => {
 
     expect(getByTestId('route-map-recenter-button')).toBeTruthy();
     expect(getByLabelText('現在位置にフォーカス')).toBeTruthy();
+  });
+
+  it('keeps the user camera position and zoom while follow is disabled', () => {
+    const currentLocation = { latitude: 35.5, longitude: 139.5 };
+    const { getByTestId, rerender, UNSAFE_getAllByType } = render(
+      <RouteMap points={[]} currentLocation={currentLocation} />,
+    );
+
+    act(() => {
+      getByTestId('route-map').props.onRegionDidChange({
+        geometry: { coordinates: [139.6, 35.6] },
+        properties: { zoomLevel: 12 },
+      });
+    });
+
+    rerender(
+      <RouteMap
+        points={[]}
+        currentLocation={{ latitude: 35.7, longitude: 139.7 }}
+      />,
+    );
+
+    const cameras = UNSAFE_getAllByType(MapLibreGL.Camera);
+    expect(cameras[0].props.centerCoordinate).toEqual([139.6, 35.6]);
+    expect(cameras[0].props.zoomLevel).toBe(12);
+  });
+
+  it('recenters on the current location without resetting zoom', () => {
+    const currentLocation = { latitude: 35.5, longitude: 139.5 };
+    const { getByTestId, UNSAFE_getAllByType } = render(
+      <RouteMap points={[]} currentLocation={currentLocation} />,
+    );
+
+    act(() => {
+      getByTestId('route-map').props.onRegionDidChange({
+        geometry: { coordinates: [139.6, 35.6] },
+        properties: { zoomLevel: 12 },
+      });
+    });
+
+    fireEvent.press(getByTestId('route-map-recenter-button'));
+
+    const cameras = UNSAFE_getAllByType(MapLibreGL.Camera);
+    expect(cameras[0].props.centerCoordinate).toEqual([139.5, 35.5]);
+    expect(cameras[0].props.zoomLevel).toBe(12);
   });
 
   it('does not render a CircleLayer when there are no points', () => {

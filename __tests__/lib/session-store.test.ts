@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { __resetDatabaseForTest } from '../../lib/database/client';
 import {
   createSession,
+  createSessionRecord,
   updateSessionStatus,
   finishSession,
   setBackgroundActive,
@@ -55,6 +56,19 @@ describe('createSession', () => {
 
     const sql = (mockDb.runAsync.mock.calls[0] as unknown[])[0] as string;
     expect(sql).toContain("'recording'");
+  });
+});
+
+describe('createSessionRecord', () => {
+  it('returns both session ID and started_at', async () => {
+    mockDb.runAsync.mockResolvedValue({ lastInsertRowId: 7, changes: 1 });
+
+    const result = await createSessionRecord();
+
+    expect(result).toEqual({
+      id: 7,
+      started_at: expect.any(Number),
+    });
   });
 });
 

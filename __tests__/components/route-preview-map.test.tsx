@@ -119,6 +119,22 @@ describe('RoutePreviewMap', () => {
     expect(ids).toContain('visible-route-line');
   });
 
+  it('splits the visible route so gap bridges are not included in the blue progress line', () => {
+    const gaps = [makeGap({ gap_started_at: 2000, gap_ended_at: 3000 })];
+    const { UNSAFE_getAllByType } = render(
+      <RoutePreviewMap points={basePoints} gaps={gaps} currentTimestamp={4000} />,
+    );
+
+    const sources = UNSAFE_getAllByType(MapLibreGL.ShapeSource);
+    const visibleRouteSource = sources.find((source) => source.props.id === 'visible-route-source');
+
+    expect(visibleRouteSource?.props.shape.features).toHaveLength(1);
+    expect(visibleRouteSource?.props.shape.features[0].geometry.coordinates).toEqual([
+      [139.0, 35.0],
+      [139.1, 35.1],
+    ]);
+  });
+
   it('does not render the visible-route line when currentTimestamp is before all points', () => {
     // currentTimestamp = 500 → 可視ポイントが 1 件以下 → visible-route-line は描画されない
     const { UNSAFE_queryAllByType } = render(
@@ -169,5 +185,54 @@ describe('RoutePreviewMap', () => {
     );
     const circles = UNSAFE_queryAllByType(MapLibreGL.CircleLayer);
     expect(circles.length).toBe(0);
+  });
+
+  it('keeps the user camera center and zoom when playback advances after manual pan', () => {
+    const { getByTestId, rerender, UNSAFE_getAllByType } = render(
+      <RoutePreviewMap points={basePoints} gaps={[]} currentTimestamp={2000} />,
+    );
+
+    fireEvent(getByTestId('route-preview-map'), 'onRegionDidChange', {
+      geometry: { coordinates: [139.45, 35.45] },
+      properties: { zoomLevel: 11 },
+    });
+
+    rerender(
+      <RoutePreviewMap points={basePoints} gaps={[]} currentTimestamp={4000} />,
+    );
+
+    const cameras = UNSAFE_getAllByType(MapLibreGL.Camera);
+    expect(cameras[0].props.centerCoordinate).toEqual([139.45, 35.45]);
+    expect(cameras[0].props.zoomLevel).toBe(11);
+  });
+
+  it('does not recenter or change zoom only because the bottom sheet padding changes', () => {
+    const { getByTestId, rerender, UNSAFE_getAllByType } = render(
+      <RoutePreviewMap
+        points={basePoints}
+        gaps={[]}
+        currentTimestamp={4000}
+        cameraPaddingBottom={80}
+      />,
+    );
+
+    fireEvent(getByTestId('route-preview-map'), 'onRegionDidChange', {
+      geometry: { coordinates: [139.33, 35.33] },
+      properties: { zoomLevel: 10 },
+    });
+
+    rerender(
+      <RoutePreviewMap
+        points={basePoints}
+        gaps={[]}
+        currentTimestamp={4000}
+        cameraPaddingBottom={240}
+      />,
+    );
+
+    const cameras = UNSAFE_getAllByType(MapLibreGL.Camera);
+    expect(cameras[0].props.centerCoordinate).toEqual([139.33, 35.33]);
+    expect(cameras[0].props.zoomLevel).toBe(10);
+    expect(cameras[0].props.padding).toEqual({ paddingBottom: 80 });
   });
 });

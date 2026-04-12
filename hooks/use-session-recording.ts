@@ -9,7 +9,7 @@ import {
   getActiveSession,
 } from '../services/gps-service';
 import { updateSessionStatus } from '../lib/session-store';
-import { SESSION_QUERY_KEY } from '../constants/task-names';
+import { SESSION_POINTS_QUERY_KEY, SESSION_QUERY_KEY } from '../constants/task-names';
 
 /** 自動一時停止検知のポーリング間隔 [ms] */
 const AUTO_PAUSE_POLL_INTERVAL = 5_000;
@@ -33,6 +33,8 @@ export type SessionRecordingState = {
   status: RecordingStatus;
   /** アクティブセッションの ID（idle のときは null） */
   activeSessionId: number | null;
+  /** アクティブセッションの開始時刻（idle のときは null） */
+  activeSessionStartedAt: number | null;
   /** 直近のエラーメッセージ（エラーなしの場合は null） */
   error: string | null;
   /** 新規セッションを作成して記録開始 */
@@ -57,6 +59,7 @@ export type SessionRecordingState = {
 export function useSessionRecording(): SessionRecordingState {
   const [status, setStatus] = useState<RecordingStatus>('loading');
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const [activeSessionStartedAt, setActiveSessionStartedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const statusRef = useRef(status);
@@ -78,6 +81,7 @@ export function useSessionRecording(): SessionRecordingState {
           if (!cancelled) {
             setStatus('idle');
             setActiveSessionId(null);
+            setActiveSessionStartedAt(null);
           }
           return;
         }
@@ -86,6 +90,7 @@ export function useSessionRecording(): SessionRecordingState {
           if (!cancelled) {
             setStatus('paused');
             setActiveSessionId(session.id);
+            setActiveSessionStartedAt(session.started_at);
           }
           return;
         }
@@ -96,17 +101,20 @@ export function useSessionRecording(): SessionRecordingState {
           if (taskRunning) {
             setStatus('recording');
             setActiveSessionId(session.id);
+            setActiveSessionStartedAt(session.started_at);
           } else {
             // クラッシュリカバリ: タスクが止まっているが DB は recording のまま
             await updateSessionStatus(session.id, 'paused', 'crash_recovery');
             setStatus('paused');
             setActiveSessionId(session.id);
+            setActiveSessionStartedAt(session.started_at);
           }
         }
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : '状態の復元に失敗しました');
           setStatus('idle');
+          setActiveSessionStartedAt(null);
         }
       }
     }
@@ -144,13 +152,17 @@ export function useSessionRecording(): SessionRecordingState {
     setStatus('loading');
     setError(null);
     try {
-      const sessionId = await startRecordingService();
-      setActiveSessionId(sessionId);
+      const session = await startRecordingService();
+      queryClient.removeQueries({ queryKey: [SESSION_POINTS_QUERY_KEY] });
+      setActiveSessionId(session.id);
+      setActiveSessionStartedAt(session.started_at);
       setStatus('recording');
       await queryClient.invalidateQueries({ queryKey: [SESSION_QUERY_KEY] });
     } catch (e) {
       setError(e instanceof Error ? e.message : '記録の開始に失敗しました');
       setStatus('idle');
+      setActiveSessionId(null);
+      setActiveSessionStartedAt(null);
     }
   }, [queryClient]);
 
@@ -186,7 +198,9 @@ export function useSessionRecording(): SessionRecordingState {
     setError(null);
     try {
       await stopRecordingService(activeSessionId);
+      queryClient.removeQueries({ queryKey: [SESSION_POINTS_QUERY_KEY] });
       setActiveSessionId(null);
+      setActiveSessionStartedAt(null);
       setStatus('idle');
       await queryClient.invalidateQueries({ queryKey: [SESSION_QUERY_KEY] });
     } catch (e) {
@@ -196,5 +210,14 @@ export function useSessionRecording(): SessionRecordingState {
     }
   }, [activeSessionId, queryClient]);
 
-  return { status, activeSessionId, error, start, pause, resume, stop };
+  return {
+    status,
+    activeSessionId,
+    activeSessionStartedAt,
+    error,
+    start,
+    pause,
+    resume,
+    stop,
+  };
 }

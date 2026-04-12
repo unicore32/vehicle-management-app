@@ -8,7 +8,7 @@ Personal-use GPS logger and vehicle management app (in active development).
 - Purpose: record trip location history in background and expand into vehicle management.
 - Current state: GPS logging, SQLite persistence, route map, tests, and CI are in place.
 - Map behavior: Home shows the live current location and exposes a focus-current-location button only after the map is panned away from center; session detail keeps attribution in the top-left and zoom controls in the top-right.
-- Quality gate: run `pnpm run check` before pushing.
+- Quality gate: run `pnpm run check` before pushing. This now includes `lint`, `typecheck`, `test`, and `lint:docs`.
 
 ## Quick Start
 ```bash
@@ -21,6 +21,7 @@ pnpm run android
 pnpm run lint
 pnpm run typecheck
 pnpm run test
+pnpm run lint:docs
 pnpm run check
 pnpm run format
 ```
@@ -52,7 +53,7 @@ pnpm run format
 
 ## Current State (for LLM Handoff)
 - CI workflow: `.github/workflows/ci.yml`.
-- CI checks: `lint`, `typecheck`, `test`.
+- CI/local check set: `lint`, `typecheck`, `test`, `lint:docs`.
 - Latest verified local check: `pnpm run check` passed.
 - Agent rules source of truth: `AGENTS.md`.
 
