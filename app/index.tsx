@@ -38,6 +38,7 @@ export default function HomeScreen() {
   const {
     status,
     activeSessionId,
+    activeSessionStartedAt,
     error,
     start,
     pause,
@@ -56,13 +57,13 @@ export default function HomeScreen() {
   const { data: latestPoint }  = useLiveLatestPoint(activeSessionId, isRecording);
   const { data: distanceKm }   = useLiveDistance(activeSessionId, isRecording);
 
-  // 経過時間を 1 秒ごとに再描画（recording 中のみ）
+  // 経過時間を 1 秒ごとに再描画（アクティブセッション中のみ）
   const [, forceUpdate] = useState(0);
   useEffect(() => {
-    if (!isRecording) return;
+    if (!isActive) return;
     const id = setInterval(() => forceUpdate((n) => n + 1), 1_000);
     return () => clearInterval(id);
-  }, [isRecording]);
+  }, [isActive]);
 
   // ── バックグラウンド検知 ──────────────────────────────────────────────────
   const appStateRef     = useRef<AppStateStatus>(AppState.currentState);
@@ -100,8 +101,9 @@ export default function HomeScreen() {
     setBottomPanelHeight(event.nativeEvent.layout.height);
   }, []);
 
-  // セッション開始時刻（最初のポイントのタイムスタンプで近似）
-  const sessionStartedAt = points[0]?.timestamp ?? Date.now();
+  const elapsedMs = activeSessionStartedAt !== null
+    ? Math.max(0, Date.now() - activeSessionStartedAt)
+    : 0;
 
   // ── レンダリング ──────────────────────────────────────────────────────────
   return (
@@ -149,7 +151,7 @@ export default function HomeScreen() {
           <View style={styles.statsRow}>
             <StatCell
               label="経過"
-              value={formatElapsedTimeMs(Date.now() - sessionStartedAt)}
+              value={formatElapsedTimeMs(elapsedMs)}
               mono
             />
             <View style={styles.statsDivider} />

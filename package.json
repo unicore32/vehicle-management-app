@@ -15,7 +15,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm run lint && pnpm run typecheck && pnpm run test",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run lint:docs",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

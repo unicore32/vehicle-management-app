@@ -6,7 +6,7 @@ import {
     appendDebugLogSync,
 } from './debug-log-store';
 
-let installed = false;
+let isAppLogCaptureSetupDone = false;
 
 type ConsoleMethod = 'log' | 'info' | 'warn' | 'error' | 'debug';
 type ErrorHandler = (error: Error, isFatal?: boolean) => void;
@@ -60,9 +60,9 @@ function captureError(error: Error, isFatal?: boolean): void {
   ]);
 }
 
-export function installAppLogCapture(): void {
-  if (!__DEV__ || installed) return;
-  installed = true;
+export function setupAppLogCapture(): void {
+  if (isAppLogCaptureSetupDone) return;
+  isAppLogCaptureSetupDone = true;
 
   const originalConsole: Record<ConsoleMethod, (...args: never[]) => void> = {
     log: console.log.bind(console),

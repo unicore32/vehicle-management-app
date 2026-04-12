@@ -5,11 +5,12 @@ import { getRecordingIntervalS, RECORDING_INTERVAL_S_DEFAULT } from '../lib/app-
 import { gpsDebug } from '../lib/gps-debug';
 import { computeSessionStats } from '../lib/session-points-store';
 import {
-  createSession,
+  createSessionRecord,
   finishSession,
   getActiveSession,
   updateSessionStatus,
 } from '../lib/session-store';
+import type { CreatedSession } from '../lib/session-store';
 
 // ─── 権限チェック ─────────────────────────────────────────────────────────────
 
@@ -64,15 +65,15 @@ async function stopLocationUpdates(): Promise<void> {
  * @skill manage_background_service
  * @description 新しいセッションを作成してバックグラウンド GPS 記録を開始する。
  *
- * @returns 作成したセッション ID
+ * @returns 作成したセッションの ID と開始時刻
  * @throws 位置情報権限が拒否された場合
  */
-export async function startRecordingService(): Promise<number> {
+export async function startRecordingService(): Promise<CreatedSession> {
   await requestLocationPermissions();
-  const sessionId = await createSession();
-  gpsDebug('recording started', { sessionId });
+  const session = await createSessionRecord();
+  gpsDebug('recording started', { sessionId: session.id });
   await startLocationUpdates();
-  return sessionId;
+  return session;
 }
 
 /**

@@ -27,12 +27,10 @@ function persistDebugLogIfEnabled(message: string, details?: DebugDetails): void
 }
 
 /**
- * 開発時のみ GPS 関連のデバッグログを出力する。
- * 本番ビルドでは何も出力しない。
+ * GPS 関連のデバッグログを出力する。
+ * 保存フラグが有効な場合は `debug_logs` にも永続化する。
  */
 export function gpsDebug(message: string, details?: DebugDetails): void {
-  if (!__DEV__) return;
-
   if (details === undefined) {
     console.debug(`[GPS] ${message}`);
     persistDebugLogIfEnabled(message);

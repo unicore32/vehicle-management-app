@@ -13,7 +13,7 @@ import { TamaguiProvider } from 'tamagui';
 // バックグラウンドタスクはモジュール import の副作用として登録される
 // アプリが OS により再起動された際もタスク定義が復元されるよう、
 // ルートレイアウトで必ず import する
-import { installAppLogCapture } from '../lib/app-log-capture';
+import { setupAppLogCapture } from '../lib/app-log-capture';
 import '../tasks/location-task';
 
 import tamaguiConfig from '../tamagui.config';
@@ -34,7 +34,7 @@ export default function RootLayout() {
   const isRecordingScreen = pathname === '/' || pathname === '/index';
 
   useEffect(() => {
-    installAppLogCapture();
+    setupAppLogCapture();
     SplashScreen.hideAsync();
   }, []);
 

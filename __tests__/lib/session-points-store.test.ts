@@ -3,6 +3,7 @@ import { __resetDatabaseForTest } from '../../lib/database/client';
 import {
   insertSessionPoints,
   getSessionPoints,
+  getRecentSessionPoints,
   getLatestSessionPoint,
   getSessionPointCount,
   computeSessionStats,
@@ -71,6 +72,28 @@ describe('getSessionPoints', () => {
 
     expect(mockDb.getAllAsync).toHaveBeenCalledWith(
       expect.stringContaining('LIMIT ?'),
+      1,
+      50,
+    );
+  });
+});
+
+describe('getRecentSessionPoints', () => {
+  it('fetches the newest points first and returns them in timestamp ASC order', async () => {
+    await getRecentSessionPoints(1, 50);
+
+    expect(mockDb.getAllAsync).toHaveBeenCalledWith(
+      expect.stringContaining('ORDER BY timestamp DESC'),
+      1,
+      50,
+    );
+    expect(mockDb.getAllAsync).toHaveBeenCalledWith(
+      expect.stringContaining('recent_points'),
+      1,
+      50,
+    );
+    expect(mockDb.getAllAsync).toHaveBeenCalledWith(
+      expect.stringContaining('ORDER BY timestamp ASC'),
       1,
       50,
     );

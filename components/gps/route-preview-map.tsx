@@ -10,7 +10,7 @@
  *    Expo Go では動作しない（development build 専用）。
  */
 import type MapLibreModule from '@maplibre/maplibre-react-native';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -76,6 +76,11 @@ type FeatureCollection = {
   features: LineFeature[];
 };
 
+type SegmentedRouteCollections = {
+  visibleRouteCollection: FeatureCollection;
+  gapCollection: FeatureCollection;
+};
+
 function toLineFeature(pts: SessionPoint[]): LineFeature {
   return {
     type: 'Feature',
@@ -85,6 +90,16 @@ function toLineFeature(pts: SessionPoint[]): LineFeature {
     },
     properties: {},
   };
+}
+
+function isGapBridge(
+  startTimestamp: number,
+  endTimestamp: number,
+  gaps: SessionGap[],
+): boolean {
+  return gaps.some(
+    (gap) => startTimestamp <= gap.gap_started_at && endTimestamp >= gap.gap_ended_at,
+  );
 }
 
 /**
@@ -122,6 +137,88 @@ function buildGapFeatureCollection(
   return { type: 'FeatureCollection', features };
 }
 
+function buildVisibleRouteCollections(
+  points: SessionPoint[],
+  gaps: SessionGap[],
+  currentTimestamp: number,
+): SegmentedRouteCollections {
+  const visiblePoints = points.filter((point) => point.timestamp <= currentTimestamp);
+  const relevantGaps = gaps.filter((gap) => gap.gap_started_at <= currentTimestamp);
+
+  if (visiblePoints.length < 2) {
+    return {
+      visibleRouteCollection: { type: 'FeatureCollection', features: [] },
+      gapCollection: buildGapFeatureCollection(gaps, points, currentTimestamp),
+    };
+  }
+
+  const visibleFeatures: LineFeature[] = [];
+  let currentSegment: SessionPoint[] = [visiblePoints[0]];
+
+  for (let index = 1; index < visiblePoints.length; index += 1) {
+    const previousPoint = visiblePoints[index - 1];
+    const currentPoint = visiblePoints[index];
+
+    if (isGapBridge(previousPoint.timestamp, currentPoint.timestamp, relevantGaps)) {
+      if (currentSegment.length >= 2) {
+        visibleFeatures.push(toLineFeature(currentSegment));
+      }
+      currentSegment = [currentPoint];
+      continue;
+    }
+
+    currentSegment.push(currentPoint);
+  }
+
+  if (currentSegment.length >= 2) {
+    visibleFeatures.push(toLineFeature(currentSegment));
+  }
+
+  return {
+    visibleRouteCollection: {
+      type: 'FeatureCollection',
+      features: visibleFeatures,
+    },
+    gapCollection: buildGapFeatureCollection(gaps, points, currentTimestamp),
+  };
+}
+
+function extractCenterCoordinate(event: unknown): [number, number] | null {
+  if (typeof event !== 'object' || event === null) return null;
+
+  const candidate = event as {
+    geometry?: { coordinates?: unknown };
+    properties?: { center?: unknown };
+  };
+
+  if (Array.isArray(candidate.geometry?.coordinates) && candidate.geometry.coordinates.length >= 2) {
+    const [longitude, latitude] = candidate.geometry.coordinates;
+    if (typeof longitude === 'number' && typeof latitude === 'number') {
+      return [longitude, latitude];
+    }
+  }
+
+  if (Array.isArray(candidate.properties?.center) && candidate.properties.center.length >= 2) {
+    const [longitude, latitude] = candidate.properties.center;
+    if (typeof longitude === 'number' && typeof latitude === 'number') {
+      return [longitude, latitude];
+    }
+  }
+
+  return null;
+}
+
+function extractZoomLevel(event: unknown): number | null {
+  if (typeof event !== 'object' || event === null) return null;
+
+  const candidate = event as {
+    properties?: { zoomLevel?: unknown; zoom?: unknown };
+  };
+
+  const zoomCandidate = candidate.properties?.zoomLevel ?? candidate.properties?.zoom;
+  return typeof zoomCandidate === 'number' ? zoomCandidate : null;
+}
+
 // ─── サブコンポーネント ────────────────────────────────────────────────────────
 
 function MapUnavailablePlaceholder({ style }: { style?: StyleProp<ViewStyle> }) {
@@ -145,31 +242,91 @@ export function RoutePreviewMap({
   cameraPaddingBottom = 0,
   showAttribution = true,
 }: Props) {
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
-  const { top } = useSafeAreaInsets();
-
-  if (MapLibreGL === null) {
-    return <MapUnavailablePlaceholder style={style} />;
-  }
-
-  // currentTimestamp 以前のポイントのみ描画（進捗ライン用）
   const visiblePoints = points.filter((p) => p.timestamp <= currentTimestamp);
-
-  // カメラの中心: 可視ポイントの末尾 → 全ポイントの先頭 → デフォルト
-  const cameraCenter: [number, number] =
+  const playbackCenter: [number, number] =
     visiblePoints.length > 0
       ? [visiblePoints[visiblePoints.length - 1].longitude, visiblePoints[visiblePoints.length - 1].latitude]
       : points.length > 0
         ? [points[0].longitude, points[0].latitude]
         : DEFAULT_CENTER;
+  const [cameraCenter, setCameraCenter] = useState<[number, number]>(playbackCenter);
+  const [cameraZoom, setCameraZoom] = useState(DEFAULT_ZOOM);
+  const [followPlayback, setFollowPlayback] = useState(true);
+  const [effectiveCameraPaddingBottom, setEffectiveCameraPaddingBottom] = useState(cameraPaddingBottom);
+  const lastPaddingSyncTimestampRef = useRef<number | null>(null);
+  const { top } = useSafeAreaInsets();
 
   const tileServerKey = resolveTileServerKey(cameraCenter);
   const mapStyle = JSON.stringify(buildRasterStyle(tileServerKey));
-  const gapCollection = buildGapFeatureCollection(gaps, points, currentTimestamp);
+  const { visibleRouteCollection, gapCollection } = buildVisibleRouteCollections(
+    points,
+    gaps,
+    currentTimestamp,
+  );
   const compassMarginTop = top + 20;
   const compassMarginRight = 60;
   const overlayTop = 12;
   const attributionTop = top + 12;
+
+  useEffect(() => {
+    if (!followPlayback) return;
+    setCameraCenter((previousCenter) => {
+      if (
+        previousCenter[0] === playbackCenter[0]
+        && previousCenter[1] === playbackCenter[1]
+      ) {
+        return previousCenter;
+      }
+
+      return playbackCenter;
+    });
+  }, [followPlayback, playbackCenter[0], playbackCenter[1]]);
+
+  useEffect(() => {
+    if (!followPlayback) {
+      lastPaddingSyncTimestampRef.current = null;
+      return;
+    }
+
+    if (lastPaddingSyncTimestampRef.current === currentTimestamp) {
+      return;
+    }
+
+    setEffectiveCameraPaddingBottom((previousPadding) => {
+      if (previousPadding === cameraPaddingBottom) {
+        return previousPadding;
+      }
+
+      return cameraPaddingBottom;
+    });
+    lastPaddingSyncTimestampRef.current = currentTimestamp;
+  }, [cameraPaddingBottom, currentTimestamp, followPlayback]);
+
+  if (MapLibreGL === null) {
+    return <MapUnavailablePlaceholder style={style} />;
+  }
+
+  function handleRegionDidChange(event: unknown) {
+    const nextCenter = extractCenterCoordinate(event);
+    const nextZoom = extractZoomLevel(event);
+
+    if (nextCenter === null && nextZoom === null) return;
+
+    const centerChanged = nextCenter !== null
+      && (nextCenter[0] !== cameraCenter[0] || nextCenter[1] !== cameraCenter[1]);
+    const zoomChanged = nextZoom !== null && nextZoom !== cameraZoom;
+
+    if (!centerChanged && !zoomChanged) return;
+
+    if (nextCenter !== null) {
+      setCameraCenter(nextCenter);
+    }
+    if (nextZoom !== null) {
+      setCameraZoom(nextZoom);
+    }
+
+    setFollowPlayback(false);
+  }
 
   return (
     <View style={[styles.container, style]}>
@@ -180,12 +337,13 @@ export function RoutePreviewMap({
         attributionEnabled={false}
         compassViewPosition={1}
         compassViewMargins={{ x: compassMarginRight, y: compassMarginTop }}
+        onRegionDidChange={handleRegionDidChange}
         testID='route-preview-map'
       >
         <MapLibreGL.Camera
           centerCoordinate={cameraCenter}
-          zoomLevel={zoom}
-          padding={{ paddingBottom: cameraPaddingBottom }}
+          zoomLevel={cameraZoom}
+          padding={{ paddingBottom: effectiveCameraPaddingBottom }}
           animationMode='moveTo'
           testID='route-preview-map-camera'
         />
@@ -197,7 +355,7 @@ export function RoutePreviewMap({
               id='full-route-line'
               style={{
                 lineColor: '#334155',
-                lineWidth: 2,
+                lineWidth: 3,
                 lineOpacity: 0.6,
               }}
             />
@@ -205,13 +363,13 @@ export function RoutePreviewMap({
         )}
 
         {/* 進捗ライン（青） */}
-        {visiblePoints.length >= 2 && (
-          <MapLibreGL.ShapeSource id='visible-route-source' shape={toLineFeature(visiblePoints)}>
+        {visibleRouteCollection.features.length > 0 && (
+          <MapLibreGL.ShapeSource id='visible-route-source' shape={visibleRouteCollection}>
             <MapLibreGL.LineLayer
               id='visible-route-line'
               style={{
                 lineColor: '#3b82f6',
-                lineWidth: 3,
+                lineWidth: 4,
                 lineOpacity: 0.9,
               }}
             />
@@ -225,7 +383,7 @@ export function RoutePreviewMap({
               id='gap-line'
               style={{
                 lineColor: '#f97316',
-                lineWidth: 2,
+                lineWidth: 3,
                 lineDasharray: [4, 4],
                 lineOpacity: 0.85,
               }}
@@ -266,7 +424,7 @@ export function RoutePreviewMap({
       <View style={[styles.zoomButtons, { top: overlayTop }]}>
         <TouchableOpacity
           style={styles.zoomButton}
-          onPress={() => setZoom((z) => Math.min(z + 1, MAX_ZOOM))}
+          onPress={() => setCameraZoom((z) => Math.min(z + 1, MAX_ZOOM))}
           testID='zoom-in-button'
         >
           <Text style={styles.zoomButtonText}>＋</Text>
@@ -274,7 +432,7 @@ export function RoutePreviewMap({
         <View style={styles.zoomDivider} />
         <TouchableOpacity
           style={styles.zoomButton}
-          onPress={() => setZoom((z) => Math.max(z - 1, MIN_ZOOM))}
+          onPress={() => setCameraZoom((z) => Math.max(z - 1, MIN_ZOOM))}
           testID='zoom-out-button'
         >
           <Text style={styles.zoomButtonText}>－</Text>

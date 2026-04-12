@@ -100,6 +100,28 @@ export async function getSessionPoints(
 }
 
 /**
+ * 指定セッションの最新ポイントを時系列昇順で返す。
+ * 地図表示で「現在地付近の直近軌跡」を優先したい場合に使う。
+ */
+export async function getRecentSessionPoints(
+  sessionId: number,
+  limit: number,
+): Promise<SessionPoint[]> {
+  const db = await getDatabase();
+  return db.getAllAsync<SessionPoint>(
+    `SELECT * FROM (
+       SELECT * FROM session_points
+       WHERE session_id = ?
+       ORDER BY timestamp DESC
+       LIMIT ?
+     ) recent_points
+     ORDER BY timestamp ASC`,
+    sessionId,
+    limit,
+  );
+}
+
+/**
  * 指定セッションの最新ポイントを 1 件返す。
  */
 export async function getLatestSessionPoint(
