@@ -1,13 +1,15 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, Text, TouchableOpacity, View, type AppStateStatus } from 'react-native';
+import { AppState, StyleSheet, Text, TouchableOpacity, View, type AppStateStatus, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SESSION_POINTS_QUERY_KEY } from '../constants/task-names';
 import { useCurrentLocation } from '../hooks/use-current-location';
 import {
-  useLiveDistance,
-  useLiveLatestPoint,
-  useLiveSessionPoints,
+    useLiveDistance,
+    useLiveLatestPoint,
+    useLiveSessionPoints,
 } from '../hooks/use-live-session';
 import { useSessionRecording } from '../hooks/use-session-recording';
 import { setBackgroundActive } from '../lib/session-store';
@@ -32,6 +34,7 @@ function formatDistance(km: number | undefined): string {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const {
     status,
     activeSessionId,
@@ -46,7 +49,7 @@ export default function HomeScreen() {
   const isActive    = status === 'recording' || status === 'paused';
   const isLoading   = status === 'loading';
   const { bottom }  = useSafeAreaInsets();
-  const { location: currentLocation } = useCurrentLocation(!isActive);
+  const { location: currentLocation } = useCurrentLocation(true);
 
   // ── ライブデータ ───────────────────────────────────────────────────────────
   const { data: points = [] }  = useLiveSessionPoints(activeSessionId, isRecording);
@@ -64,6 +67,7 @@ export default function HomeScreen() {
   // ── バックグラウンド検知 ──────────────────────────────────────────────────
   const appStateRef     = useRef<AppStateStatus>(AppState.currentState);
   const [isBg, setIsBg] = useState(false);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(0);
 
   const handleAppStateChange = useCallback(
     (nextState: AppStateStatus) => {
@@ -77,15 +81,24 @@ export default function HomeScreen() {
       } else if (prev !== 'active' && nextState === 'active') {
         setIsBg(false);
         setBackgroundActive(activeSessionId, false).catch(() => {});
+        if (isActive) {
+          queryClient.invalidateQueries({
+            queryKey: [SESSION_POINTS_QUERY_KEY, activeSessionId],
+          }).catch(() => {});
+        }
       }
     },
-    [activeSessionId, isRecording],
+    [activeSessionId, isActive, isRecording, queryClient],
   );
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', handleAppStateChange);
     return () => sub.remove();
   }, [handleAppStateChange]);
+
+  const handleBottomPanelLayout = useCallback((event: LayoutChangeEvent) => {
+    setBottomPanelHeight(event.nativeEvent.layout.height);
+  }, []);
 
   // セッション開始時刻（最初のポイントのタイムスタンプで近似）
   const sessionStartedAt = points[0]?.timestamp ?? Date.now();
@@ -97,8 +110,9 @@ export default function HomeScreen() {
       {/* 地図：画面全体に広がる */}
       <RouteMap
         points={points}
-        currentLocation={!isActive ? currentLocation : null}
+        currentLocation={currentLocation}
         style={StyleSheet.absoluteFill}
+        recenterBottomOffset={bottomPanelHeight}
       />
 
       {/* 上部オーバーレイ：ステータスバッジ + バナー類 */}
@@ -126,7 +140,10 @@ export default function HomeScreen() {
       </SafeAreaView>
 
       {/* ボトムパネル */}
-      <View style={[styles.bottomPanel, { paddingBottom: Math.max(bottom, 16) }]}>
+      <View
+        style={[styles.bottomPanel, { paddingBottom: Math.max(bottom, 16) }]}
+        onLayout={handleBottomPanelLayout}
+      >
         {/* ライブ統計（アクティブ時のみ） */}
         {isActive && (
           <View style={styles.statsRow}>

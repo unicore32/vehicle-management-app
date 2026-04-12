@@ -1,7 +1,7 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Alert, Linking, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 
 import { useQueryClient } from '@tanstack/react-query';
 import { GapCorrectionPanel } from '../../components/gps/gap-correction-panel';
@@ -12,6 +12,11 @@ import { SessionDetailStats } from '../../components/gps/session-detail-stats';
 import { ConfirmDialog } from '../../components/shared/confirm-dialog';
 import { ErrorState } from '../../components/shared/error-state';
 import { LoadingState } from '../../components/shared/loading-state';
+import {
+  getTileAttribution,
+  getTileAttributionUrl,
+  resolveTileServerKey,
+} from '../../constants/map-config';
 import { SESSION_DETAIL_QUERY_KEY } from '../../constants/task-names';
 import { useDeleteSession, useSessionDetail } from '../../hooks/use-session-detail';
 import { useSessionPlayback } from '../../hooks/use-session-playback';
@@ -52,6 +57,14 @@ export default function SessionDetailScreen() {
   const gaps = data?.gaps ?? [];
 
   const playback = useSessionPlayback(points);
+  const visiblePoints = points.filter((point) => point.timestamp <= playback.currentTimestamp);
+  const attributionCenter: [number, number] =
+    visiblePoints.length > 0
+      ? [visiblePoints[visiblePoints.length - 1].longitude, visiblePoints[visiblePoints.length - 1].latitude]
+      : points.length > 0
+        ? [points[0].longitude, points[0].latitude]
+        : [139.6917, 35.6895];
+  const tileServerKey = resolveTileServerKey(attributionCenter);
 
   const minTs = points.length > 0 ? points[0].timestamp : 0;
   const maxTs = points.length > 0 ? points[points.length - 1].timestamp : 0;
@@ -102,7 +115,21 @@ export default function SessionDetailScreen() {
         currentTimestamp={playback.currentTimestamp}
         style={styles.map}
         cameraPaddingBottom={sheetHeight + 40}
+        showAttribution={false}
       />
+
+      <View
+        pointerEvents='box-none'
+        style={styles.attributionOverlay}
+      >
+        <TouchableOpacity
+          style={styles.attribution}
+          onPress={() => Linking.openURL(getTileAttributionUrl(tileServerKey))}
+          testID='session-map-attribution-link'
+        >
+          <Text style={styles.attributionText}>{getTileAttribution(tileServerKey)}</Text>
+        </TouchableOpacity>
+      </View>
 
       <BottomSheet
         ref={bottomSheetRef}
@@ -238,6 +265,25 @@ const styles = StyleSheet.create({
   },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  attributionOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    zIndex: 30,
+    elevation: 30,
+  },
+  attribution: {
+    alignSelf: 'flex-start',
+  },
+  attributionText: {
+    fontSize: 10,
+    color: '#cbd5e1',
+    backgroundColor: 'rgba(2, 6, 23, 0.82)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
   },
   sheet: {
     position: 'absolute',

@@ -18,7 +18,6 @@ export function useCurrentLocation(enabled: boolean) {
 
     async function start() {
       if (!enabled) {
-        setLocation(null);
         setError(null);
         return;
       }
@@ -33,6 +32,15 @@ export function useCurrentLocation(enabled: boolean) {
         }
 
         setError(null);
+        const initial = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        setLocation({
+          latitude: initial.coords.latitude,
+          longitude: initial.coords.longitude,
+        });
+
         subscription = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.Balanced,

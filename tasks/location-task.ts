@@ -20,23 +20,20 @@ import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
 import { LOCATION_TASK_NAME } from '../constants/task-names';
 import {
-  AUTO_PAUSE_MIN_POINTS,
-  AUTO_PAUSE_SPEED_THRESHOLD_MPS,
-  getAutoPauseEnabledSync,
-  getAutoPauseThresholdSSync,
-  getGapThresholdSSync,
+    AUTO_PAUSE_MIN_POINTS,
+    AUTO_PAUSE_SPEED_THRESHOLD_MPS,
+    getAutoPauseEnabledSync,
+    getAutoPauseThresholdSSync,
+    getGapThresholdSSync,
 } from '../lib/app-state-store';
 import {
-  CREATE_APP_STATE_TABLE,
-  CREATE_DEBUG_LOGS_CREATED_AT_INDEX,
-  CREATE_DEBUG_LOGS_TABLE,
-  CREATE_SESSIONS_TABLE,
-  CREATE_SESSION_GAPS_SESSION_INDEX,
-  CREATE_SESSION_GAPS_TABLE,
-  CREATE_SESSION_POINTS_SESSION_INDEX,
-  CREATE_SESSION_POINTS_TABLE,
+    CREATE_APP_STATE_TABLE,
+    CREATE_SESSIONS_TABLE,
+    CREATE_SESSION_GAPS_SESSION_INDEX,
+    CREATE_SESSION_GAPS_TABLE,
+    CREATE_SESSION_POINTS_SESSION_INDEX,
+    CREATE_SESSION_POINTS_TABLE,
 } from '../lib/database/schema';
-import { gpsDebug } from '../lib/gps-debug';
 
 type LocationTaskData = {
   locations: Location.LocationObject[];
@@ -47,21 +44,72 @@ type TaskExecutorBody<T> = {
   error: TaskManager.TaskManagerError | null;
 };
 
+function taskDebug(message: string, details?: Record<string, unknown>): void {
+  if (!__DEV__) return;
+  if (details === undefined) {
+    console.debug(`[GPS][TASK] ${message}`);
+    return;
+  }
+  console.debug(`[GPS][TASK] ${message}`, details);
+}
+
+let taskDb: SQLite.SQLiteDatabase | null = null;
+let taskSchemaReady = false;
+
+function ensureTaskSchemaSync(db: SQLite.SQLiteDatabase): void {
+  if (taskSchemaReady) return;
+
+  // WAL mode: メインコンテキストの非同期読み取りと並列実行できるようにし
+  // SQLITE_BUSY による silent な null 返却を防ぐ。
+  // WAL はデータベースファイルレベルで有効化されるため、
+  // どちらかのコンテキストで一度設定すれば全接続に適用される。
+  db.execSync('PRAGMA journal_mode=WAL;');
+
+  // NOTE: sync コンテキストでは PRAGMA foreign_keys が
+  // NativeDatabase.execSync 側で NPE を起こすことがあるため実行しない。
+  db.execSync(CREATE_SESSIONS_TABLE);
+  db.execSync(CREATE_SESSION_POINTS_TABLE);
+  db.execSync(CREATE_SESSION_POINTS_SESSION_INDEX);
+  db.execSync(CREATE_SESSION_GAPS_TABLE);
+  db.execSync(CREATE_SESSION_GAPS_SESSION_INDEX);
+  db.execSync(CREATE_APP_STATE_TABLE);
+
+  taskSchemaReady = true;
+}
+
+function getTaskDatabaseSync(): SQLite.SQLiteDatabase {
+  if (taskDb === null) {
+    taskDb = SQLite.openDatabaseSync('gps_logger.db');
+    taskSchemaReady = false;
+  }
+
+  ensureTaskSchemaSync(taskDb);
+  return taskDb;
+}
+
+function resetTaskDatabaseSync(): void {
+  if (taskDb !== null) {
+    try {
+      taskDb.closeSync();
+    } catch {
+      // ベストエフォートでクローズ
+    }
+  }
+
+  taskDb = null;
+  taskSchemaReady = false;
+}
+
 /**
  * 同期 API でアクティブセッション ID を取得する。
  * sessions テーブルの status = 'recording' を検索する。
  * テーブルが存在しない場合（初回起動直後など）は null を返す。
  */
 function getActiveSessionIdSync(db: SQLite.SQLiteDatabase): number | null {
-  try {
-    const row = db.getFirstSync<{ id: number }>(
-      `SELECT id FROM sessions WHERE status = 'recording' ORDER BY started_at DESC LIMIT 1`,
-    );
-    return row?.id ?? null;
-  } catch {
-    // テーブル未作成の場合（初回 / DB 破損）は null を返す
-    return null;
-  }
+  const row = db.getFirstSync<{ id: number }>(
+    `SELECT id FROM sessions WHERE status = 'recording' ORDER BY started_at DESC LIMIT 1`,
+  );
+  return row?.id ?? null;
 }
 
 
@@ -98,7 +146,7 @@ function insertGapSync(
   gapStartedAt: number,
   gapEndedAt: number,
 ): void {
-  gpsDebug('gap detected', { sessionId, gapStartedAt, gapEndedAt });
+  taskDebug('gap detected', { sessionId, gapStartedAt, gapEndedAt });
   db.runSync(
     `INSERT INTO session_gaps
        (session_id, gap_started_at, gap_ended_at, reason, correction_mode)
@@ -179,28 +227,15 @@ function autoPauseSessionSync(db: SQLite.SQLiteDatabase, sessionId: number): voi
  * 必ず finally で closeSync() を呼び、ネイティブ接続を解放する。
  */
 function persistLocationsSync(locations: Location.LocationObject[]): void {
-  const db = SQLite.openDatabaseSync('gps_logger.db');
+  const db = getTaskDatabaseSync();
   try {
-    // テーブルを冪等に確保（バックグラウンド起動直後でも確実に存在させる）
-    // NOTE: expo-sqlite の sync コンテキストでは PRAGMA foreign_keys が
-    // NativeDatabase.execSync 側で NPE を起こすことがあるため、ここでは実行しない。
-    // main app 側の async 初期化で有効化される前提で、バックグラウンド書き込みを優先する。
-    db.execSync(CREATE_SESSIONS_TABLE);
-    db.execSync(CREATE_SESSION_POINTS_TABLE);
-    db.execSync(CREATE_SESSION_POINTS_SESSION_INDEX);
-    db.execSync(CREATE_SESSION_GAPS_TABLE);
-    db.execSync(CREATE_SESSION_GAPS_SESSION_INDEX);
-    db.execSync(CREATE_APP_STATE_TABLE);
-    db.execSync(CREATE_DEBUG_LOGS_TABLE);
-    db.execSync(CREATE_DEBUG_LOGS_CREATED_AT_INDEX);
-
     const sessionId = getActiveSessionIdSync(db);
     if (sessionId === null) {
-      gpsDebug('no active session; dropping incoming locations', { count: locations.length });
+      taskDebug('no active session; dropping incoming locations', { count: locations.length });
       return;
     }
 
-    gpsDebug('processing locations', { sessionId, count: locations.length });
+    taskDebug('processing locations', { sessionId, count: locations.length });
 
     // 欠損区間検出: 直前ポイントとのタイムスタンプ差が閾値以上なら gap を記録する
     const gapThresholdMs = getGapThresholdSSync(db) * 1_000;
@@ -234,11 +269,13 @@ function persistLocationsSync(locations: Location.LocationObject[]): void {
     const recentPoints = getRecentPointsSync(db, sessionId, AUTO_PAUSE_MIN_POINTS);
 
     if (shouldAutoPause(recentPoints, thresholdS, Date.now())) {
-      gpsDebug('auto pause triggered', { sessionId, thresholdS });
+      taskDebug('auto pause triggered', { sessionId, thresholdS });
       autoPauseSessionSync(db, sessionId);
     }
-  } finally {
-    db.closeSync();
+  } catch (error) {
+    // NativeDatabase 側が壊れた場合に次回 open し直せるよう接続を破棄する。
+    resetTaskDatabaseSync();
+    throw error;
   }
 }
 
@@ -246,7 +283,7 @@ TaskManager.defineTask(
   LOCATION_TASK_NAME,
   async ({ data, error }: TaskExecutorBody<LocationTaskData>) => {
     if (error) {
-      gpsDebug('background task error', { message: error.message });
+      taskDebug('background task error', { message: error.message });
       return;
     }
 
@@ -254,7 +291,9 @@ TaskManager.defineTask(
     try {
       persistLocationsSync(locations);
     } catch (e) {
-      gpsDebug('failed to persist locations', { error: e instanceof Error ? e.message : String(e) });
+      taskDebug('failed to persist locations', {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   },
 );

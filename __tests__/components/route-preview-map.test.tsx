@@ -1,5 +1,6 @@
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import MapLibreGL from '@maplibre/maplibre-react-native';
+import { Linking } from 'react-native';
 import { RoutePreviewMap } from '../../components/gps/route-preview-map';
 import type { SessionPoint } from '../../lib/session-points-store';
 import type { SessionGap } from '../../lib/session-gaps-store';
@@ -51,12 +52,43 @@ describe('RoutePreviewMap', () => {
     expect(getByTestId('route-preview-map')).toBeTruthy();
   });
 
-  it('renders zoom in and zoom out buttons', () => {
+  it('uses OSM tiles for locations outside Japan', () => {
+    const outsideJapanPoints = [
+      makePoint({ id: 1, timestamp: 1000, latitude: 37.7749, longitude: -122.4194 }),
+      makePoint({ id: 2, timestamp: 2000, latitude: 37.7755, longitude: -122.418 }),
+    ];
     const { getByTestId } = render(
+      <RoutePreviewMap points={outsideJapanPoints} gaps={[]} currentTimestamp={2000} />,
+    );
+
+    expect(getByTestId('route-preview-map').props['data-map-style']).toContain(
+      'tile.openstreetmap.org',
+    );
+  });
+
+  it('renders zoom in and zoom out buttons', () => {
+    const { getByTestId, queryByTestId } = render(
       <RoutePreviewMap points={basePoints} gaps={[]} currentTimestamp={4000} />,
     );
     expect(getByTestId('zoom-in-button')).toBeTruthy();
     expect(getByTestId('zoom-out-button')).toBeTruthy();
+    expect(queryByTestId('route-preview-recenter-button')).toBeNull();
+  });
+
+  it('opens the OpenStreetMap attribution page from the attribution link', () => {
+    const openUrlSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+    const outsideJapanPoints = [
+      makePoint({ id: 1, timestamp: 1000, latitude: 37.7749, longitude: -122.4194 }),
+      makePoint({ id: 2, timestamp: 2000, latitude: 37.7755, longitude: -122.418 }),
+    ];
+    const { getByTestId } = render(
+      <RoutePreviewMap points={outsideJapanPoints} gaps={[]} currentTimestamp={2000} />,
+    );
+
+    fireEvent.press(getByTestId('route-preview-attribution-link'));
+
+    expect(openUrlSpy).toHaveBeenCalledWith('https://www.openstreetmap.org/copyright');
+    openUrlSpy.mockRestore();
   });
 
   it('renders a Camera with a default center when no points', () => {

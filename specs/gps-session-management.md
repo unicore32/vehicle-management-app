@@ -1,66 +1,66 @@
-# GPS session management
+# GPS セッション管理
 
-## Goal
-- Manage GPS logging as a session-based feature instead of a simple point collector.
-- Support pause/resume, GPX export, per-session inspection, deletion, and summary display.
-- Allow later correction for missing or degraded GPS segments.
+## 目的
+- GPS ログを単純なポイント収集ではなく、セッション単位の機能として扱う。
+- pause/resume、GPX export、セッション単位の閲覧、削除、サマリー表示をサポートする。
+- 欠損または劣化した GPS 区間を後から補正できるようにする。
 
-## Related specs
-- Shared navigation, settings, data model, and reusable UI pieces are defined in [specs/gps-session-foundation.md](specs/gps-session-foundation.md).
+## 関連仕様
+- 共通のナビゲーション、設定、データモデル、再利用 UI は [specs/gps-session-foundation.md](specs/gps-session-foundation.md) で定義する。
 
-## Scope
-### Included
-- Start / pause / resume / stop of GPS logging
-- Session list and session detail views
-- Per-session summary
+## スコープ
+### 対象
+- GPS ログの start / pause / resume / stop
+- Session list と Session detail 画面
+- セッション単位のサマリー
 - GPX export
-- Deletion of one session at a time
-- Missing-segment correction support
-- Background GPS logging
-- Background recording notification
-- Automatic pause after prolonged stop / idling
-- Manual deletion of sessions and exported files
+- 1 件ずつのセッション削除
+- 欠損区間補正のサポート
+- バックグラウンド GPS 記録
+- バックグラウンド記録通知
+- 長時間停止 / アイドリング時の自動一時停止
+- セッションとエクスポート済みファイルの手動削除
 
-### Out of scope
-- Cloud sync
-- Multi-device sharing
-- Public store distribution UX
-- Advanced route editing beyond basic correction
+### 対象外
+- クラウド同期
+- 複数端末間共有
+- 公開ストア配布向け UX
+- 基本的な補正を超える高度なルート編集
 
-## Terms
-- **Session**: one drive / trip / logging period.
-- **Track point**: one recorded GPS sample.
-- **Missing segment**: a time range where GPS could not be recorded reliably.
+## 用語
+- **Session**: 1 回の drive / trip / logging 期間。
+- **Track point**: 記録された 1 件の GPS サンプル。
+- **Missing segment**: GPS を十分な信頼性で記録できなかった時間帯。
 
-## Behavior
-### Logging state
+## 挙動
+### 記録状態
 - `idle`: not recording
 - `recording`: actively collecting GPS points
 - `paused`: session exists, but point collection is temporarily stopped
 - `background`: recording continues while the app is backgrounded
 
-### Location sampling interval
-- GPS recording should use a configurable sampling interval.
-- The setting is entered as a numeric value in seconds.
-- Default value: 2 seconds.
-- The configured interval is applied when recording starts or resumes.
+### 位置サンプリング間隔
+- GPS 記録では設定可能なサンプリング間隔を使う。
+- 設定値は秒単位の数値入力とする。
+- 既定値は 2 秒とする。
+- 設定した間隔は、記録開始時または再開時に適用する。
 
 ### Pause / resume
-- Pause keeps the session open.
-- Resume continues the same session.
-- Pause time is excluded from moving time.
-- The UI must clearly show that the session is paused.
+- Pause してもセッションは閉じない。
+- Resume では同じセッションを継続する。
+- Pause 中の時間は moving time に含めない。
+- UI ではセッションが paused であることを明確に表示する。
 
-### Background recording
-- GPS logging should continue while the app is in the background, if permissions allow it.
-- When the app enters the background during an active session, show a push/local notification that recording is still running.
-- The notification should clearly indicate that background logging is active.
-- Background recording should reuse the same session and point data model.
-- If background location permission is denied, background logging should stop while the app is backgrounded.
-- If notification permission is denied, recording should continue and only the notification presentation should be skipped.
+### バックグラウンド記録
+- 権限が許可されている場合、アプリがバックグラウンドでも GPS 記録を継続する。
+- Active なセッション中にアプリがバックグラウンドへ移行したら、記録継続中であることを示す push/local notification を表示する。
+- 通知では、バックグラウンド記録が active であることを明確に伝える。
+- バックグラウンド記録でも、同じ session と point のデータモデルを使う。
+- バックグラウンド位置情報権限が拒否されている場合、バックグラウンド中は記録を停止する。
+- 通知権限が拒否されている場合でも記録は継続し、通知表示だけをスキップする。
 
-### Per-session display
-Each session should show at least:
+### セッション単位の表示項目
+各セッションでは最低限次を表示する。
 - start time
 - end time
 - duration
@@ -71,28 +71,36 @@ Each session should show at least:
 - route preview map
 
 ### GPX export
-- Export should work per session.
-- Output should be a `.gpx` file containing ordered track points.
-- File name should be timestamp-based, for example `trip-2026-04-05-0830.gpx`.
-- Export should preserve raw timestamps as much as possible.
+- Export はセッション単位で実行できるようにする。
+- 出力は、順序付き track point を含む `.gpx` ファイルとする。
+- ファイル名はタイムスタンプベースにし、例として `trip-2026-04-05-0830.gpx` のような形式にする。
+- Export では生のタイムスタンプをできるだけ保持する。
 
-### Route preview playback
-- The session detail preview map should support zoom in and zoom out.
-- The preview should start more zoomed in by default so the route is easier to inspect at a glance.
-- The preview should support a time slider for scrubbing through the route.
-- When the slider moves, the displayed trajectory should update to match the selected timestamp.
-- The preview should support incremental playback from start to end.
-- Initial playback state should start at the latest recorded point so the default map view shows the end of the route.
-- Gaps in GPS data should remain visible or otherwise distinguishable in the preview.
+### ルートプレビュー再生
+- Session detail の preview map は zoom in / zoom out をサポートする。
+- ズーム操作は地図コンテンツ領域の右上に固定する。
+- プレビューは、ぱっと見でルートを確認しやすいよう、初期状態でやや拡大した表示にする。
+- プレビューは、時刻スライダーによるスクラブをサポートする。
+- スライダーが動いたら、表示中の軌跡は選択中の timestamp に合わせて更新する。
+- プレビューは、開始から終了までの段階的な再生をサポートする。
+- 初期再生位置は最新記録ポイントとし、デフォルト表示でルート終端が見えるようにする。
+- GPS データのギャップは、プレビュー内で見分けられる状態を維持する。
+- Session detail の preview map では attribution を左上に表示し、recenter control は表示しない。
 
-### Deletion
-- Deletion should be performed per session.
-- Deleting a session must also delete its track points and related missing-segment records.
-- A confirmation dialog is required before deletion.
-- Exported GPX files may remain after session deletion if they were already shared or saved elsewhere.
+### ホーム地図の挙動
+- Home 地図では、foreground の現在地が取得できしだい現在地マーカーを表示する。
+- ユーザーが地図をパンして現在地が中心でなくなった場合、左下付近に現在地へ戻すアイコンを表示する。
+- 現在地へ戻すアイコンを押したら、地図を現在地へ戻し、アイコンを再び非表示にする。
+- 地図中心が現在地に留まっている場合、現在地へ戻すアイコンは表示しない。
 
-### Summary
-#### Session summary
+### 削除
+- 削除はセッション単位で行う。
+- セッション削除時には、その track point と関連する missing-segment record も削除する。
+- 削除前には確認ダイアログを必須とする。
+- Export 済み GPX ファイルは、すでに共有または別保存されている場合、セッション削除後も残ってよい。
+
+### サマリー
+#### セッションサマリー
 - duration
 - distance
 - average speed
@@ -100,41 +108,40 @@ Each session should show at least:
 - point count
 - start / end time
 
-Summary calculation policy:
-- Total distance should be calculated from consecutive valid track points using their ordered coordinates.
-- Average speed should be based on moving time, not total wall-clock duration.
-- Wall-clock duration may include idle stop time, but paused time should be excluded from moving time.
-- If the session has gaps, summary values should use the recorded/corrected route as the source of truth.
+サマリー計算方針は次のとおり。
+- Total distance は、有効な連続 track point の順序付き座標から計算する。
+- Average speed は総経過時間ではなく moving time を基準に計算する。
+- Wall-clock duration には停止中の時間が含まれてよいが、paused の時間は moving time から除外する。
+- セッションにギャップがある場合、サマリー値は記録済みまたは補正済みルートを source of truth とする。
 
-#### Overall summary
+#### 全体サマリー
 - total sessions
 - total distance
 - total moving time
 - average speed
 - max speed
-- monthly session count
 
-### Missing GPS correction
-- When points are missing, the session should preserve a missing-segment record.
-- A session detail view should support correction later.
-- First implementation can use simple interpolation between surrounding points.
-- Manual correction can be added later if needed.
-- If GPS acquisition fails temporarily, the session should keep the missing segment and allow later correction.
-- A gap is detected when the timestamp difference between consecutive GPS points exceeds the configured threshold.
-- The gap detection threshold is configurable from settings (default: 10 seconds, range: 5–300 seconds).
-- Detected gaps are stored in `session_gaps` with `reason: 'gps_timeout'`.
-- Interpolation generates intermediate points at 10-second intervals using linear interpolation of coordinates, altitude, and speed.
-- Interpolated points are inserted into `session_points`; original points are never modified.
-- After correction, `correction_mode` is updated to `'interpolated'`.
+### Missing GPS 補正
+- ポイントが欠けた場合でも、セッションには missing-segment record を保持する。
+- Session detail では後から補正できるようにする。
+- 初期実装では、前後ポイント間の単純補間を使ってよい。
+- 必要なら手動補正は後から追加できるようにする。
+- GPS 取得が一時的に失敗した場合でも、missing segment は保持し、後で補正できるようにする。
+- ギャップは、連続する GPS point 間の timestamp 差が設定閾値を超えたときに検出する。
+- ギャップ検出閾値は設定画面から変更可能とし、既定値を 10 秒、範囲を 5〜300 秒とする。
+- 検出したギャップは `session_gaps` に `reason: 'gps_timeout'` として保存する。
+- 補間では、10 秒間隔で座標、高度、速度を線形補間した中間ポイントを生成する。
+- 補間ポイントは `session_points` に追加し、元のポイントは変更しない。
+- 補正後は `correction_mode` を `'interpolated'` に更新する。
 
-### Automatic pause on long stop
-- If the device stays stopped for a configured period, recording should auto-pause.
-- The pause decision should be based on both movement and time.
-- The stop threshold should be configurable from settings.
-- The first version can use a sensible default value, but the user should be able to change it later.
-- Auto-pause should not end the session.
-- The UI should show why the session paused, if possible.
-- A fixed default threshold should be defined in the implementation, but the exact value should be user-adjustable later.
+### 長時間停止時の自動一時停止
+- 端末が設定時間以上停止していた場合、記録は自動で pause する。
+- Pause 判定は移動有無と経過時間の両方を使う。
+- 停止閾値は設定画面から変更可能にする。
+- 初期版では妥当な既定値を持ってよいが、後からユーザーが変更できるようにする。
+- Auto-pause してもセッションは終了しない。
+- 可能であれば、UI で pause 理由を表示する。
+- 実装では固定の既定閾値を定義しつつ、その値は将来的にユーザー変更可能であることを前提にする。
 
-## Notes
-- Session modeling should be introduced before feature growth continues.
+## メモ
+- セッションモデリングは、機能拡張を続ける前に導入する。

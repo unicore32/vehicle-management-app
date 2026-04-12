@@ -20,6 +20,44 @@ export type TileServerKey = keyof typeof TILE_SERVERS;
 /** デフォルトタイルサーバー（変更する場合はここを書き換える） */
 export const DEFAULT_TILE_SERVER: TileServerKey = 'OSM';
 
+const JAPAN_BOUNDS = {
+  minLongitude: 122,
+  maxLongitude: 154,
+  minLatitude: 20,
+  maxLatitude: 46,
+} as const;
+
+type Coordinate = [number, number];
+
+function isCoordinateInJapan([longitude, latitude]: Coordinate): boolean {
+  return (
+    longitude >= JAPAN_BOUNDS.minLongitude
+    && longitude <= JAPAN_BOUNDS.maxLongitude
+    && latitude >= JAPAN_BOUNDS.minLatitude
+    && latitude <= JAPAN_BOUNDS.maxLatitude
+  );
+}
+
+export function resolveTileServerKey(centerCoordinate?: Coordinate | null): TileServerKey {
+  if (centerCoordinate && isCoordinateInJapan(centerCoordinate)) {
+    return 'GSI';
+  }
+
+  return DEFAULT_TILE_SERVER;
+}
+
+export function getTileAttribution(tileServerKey: TileServerKey): string {
+  return tileServerKey === 'OSM'
+    ? '© OpenStreetMap Contributors'
+    : '© 国土地理院';
+}
+
+export function getTileAttributionUrl(tileServerKey: TileServerKey): string {
+  return tileServerKey === 'OSM'
+    ? 'https://www.openstreetmap.org/copyright'
+    : 'https://maps.gsi.go.jp/development/ichiran.html';
+}
+
 /**
  * MapLibre に渡す Mapbox GL Style Spec 形式のスタイルオブジェクトを生成する。
  * ラスタータイルを唯一のレイヤーとして持つ最小構成。
@@ -45,6 +83,9 @@ export function buildRasterStyle(tileServerKey: TileServerKey = DEFAULT_TILE_SER
         source: 'raster-tiles',
         minzoom: 0,
         maxzoom: 22,
+        paint: {
+          'raster-resampling': 'nearest' as const,
+        },
       },
     ],
   };

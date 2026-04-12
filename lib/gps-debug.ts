@@ -1,6 +1,5 @@
-import * as SQLite from 'expo-sqlite';
 import { getGpsLoggingEnabledSync } from './app-state-store';
-import { CREATE_APP_STATE_TABLE } from './database/schema';
+import { getMainSyncDatabase } from './database/sync-client';
 import { appendDebugLogSync } from './debug-log-store';
 
 type DebugDetails = Record<string, unknown>;
@@ -15,18 +14,13 @@ function stringifyDetails(details: DebugDetails): string {
 
 function persistDebugLogIfEnabled(message: string, details?: DebugDetails): void {
   try {
-    const db = SQLite.openDatabaseSync('gps_logger.db');
-    try {
-      db.execSync(CREATE_APP_STATE_TABLE);
-      if (!getGpsLoggingEnabledSync(db)) return;
+    const db = getMainSyncDatabase();
+    if (!getGpsLoggingEnabledSync(db)) return;
 
-      appendDebugLogSync(db, {
-        message,
-        details: details === undefined ? null : stringifyDetails(details),
-      });
-    } finally {
-      db.closeSync();
-    }
+    appendDebugLogSync(db, {
+      message,
+      details: details === undefined ? null : stringifyDetails(details),
+    });
   } catch {
     // デバッグログ保存はベストエフォート
   }

@@ -1,0 +1,17 @@
+{
+  "plugins": {
+    "@textlint/markdown": true
+  },
+  "rules": {
+    "preset-ja-technical-writing": {
+      "max-kanji-continuous-len": false,
+      "no-mix-dearu-desumasu": false,
+      "sentence-length": {
+        "max": 140
+      },
+      "no-doubled-joshi": {
+        "min_interval": 2
+      }
+    }
+  }
+}
