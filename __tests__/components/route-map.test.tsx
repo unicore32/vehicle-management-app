@@ -1,6 +1,7 @@
-import { render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 // モックモジュールから実際のコンポーネント参照を取得する
 import MapLibreGL from '@maplibre/maplibre-react-native';
+import { Linking } from 'react-native';
 import { RouteMap } from '../../components/gps/route-map';
 import type { SessionPoint } from '../../lib/session-points-store';
 
@@ -27,6 +28,27 @@ describe('RouteMap', () => {
     expect(getByTestId('route-map')).toBeTruthy();
   });
 
+  it('uses GSI tiles for locations inside Japan', () => {
+    const points = [makePoint({ latitude: 35.6812, longitude: 139.7671 })];
+    const { getByTestId, getByText } = render(<RouteMap points={points} />);
+
+    expect(getByTestId('route-map').props['data-map-style']).toContain(
+      'cyberjapandata.gsi.go.jp/xyz/std',
+    );
+    expect(getByText('© 国土地理院')).toBeTruthy();
+  });
+
+  it('opens the official GSI tile page from the attribution link', () => {
+    const openUrlSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+    const points = [makePoint({ latitude: 35.6812, longitude: 139.7671 })];
+    const { getByTestId } = render(<RouteMap points={points} />);
+
+    fireEvent.press(getByTestId('route-map-attribution-link'));
+
+    expect(openUrlSpy).toHaveBeenCalledWith('https://maps.gsi.go.jp/development/ichiran.html');
+    openUrlSpy.mockRestore();
+  });
+
   it('renders Camera even when no points are provided (default center)', () => {
     const { UNSAFE_getAllByType } = render(<RouteMap points={[]} />);
     const cameras = UNSAFE_getAllByType(MapLibreGL.Camera);
@@ -42,6 +64,22 @@ describe('RouteMap', () => {
     const cameras = UNSAFE_getAllByType(MapLibreGL.Camera);
 
     expect(cameras[0].props.centerCoordinate).toEqual([140.0, 36.0]);
+  });
+
+  it('centers on the live current location and renders its marker when available', () => {
+    const points = [
+      makePoint({ id: 1, latitude: 35.0, longitude: 139.0, timestamp: 1000 }),
+      makePoint({ id: 2, latitude: 36.0, longitude: 140.0, timestamp: 2000 }),
+    ];
+    const currentLocation = { latitude: 35.5, longitude: 139.5 };
+    const { UNSAFE_getAllByType } = render(
+      <RouteMap points={points} currentLocation={currentLocation} />,
+    );
+    const cameras = UNSAFE_getAllByType(MapLibreGL.Camera);
+    const circles = UNSAFE_getAllByType(MapLibreGL.CircleLayer);
+
+    expect(cameras[0].props.centerCoordinate).toEqual([139.5, 35.5]);
+    expect(circles.map((circle) => circle.props.id as string)).toContain('current-location-circle');
   });
 
   it('renders a LineLayer when there are 2 or more points', () => {
@@ -66,10 +104,27 @@ describe('RouteMap', () => {
 
   it('renders a CircleLayer marker for the latest point', () => {
     const points = [makePoint({ id: 1 }), makePoint({ id: 2 })];
-    const { UNSAFE_getAllByType } = render(<RouteMap points={points} />);
+    const { UNSAFE_getAllByType, queryByTestId } = render(<RouteMap points={points} />);
     const circles = UNSAFE_getAllByType(MapLibreGL.CircleLayer);
 
     expect(circles.length).toBeGreaterThan(0);
+    expect(queryByTestId('route-map-recenter-button')).toBeNull();
+  });
+
+  it('shows the focus button when the map center moves away from current location', () => {
+    const currentLocation = { latitude: 35.5, longitude: 139.5 };
+    const { getByLabelText, getByTestId } = render(
+      <RouteMap points={[]} currentLocation={currentLocation} />,
+    );
+
+    act(() => {
+      getByTestId('route-map').props.onRegionDidChange({
+        geometry: { coordinates: [139.501, 35.501] },
+      });
+    });
+
+    expect(getByTestId('route-map-recenter-button')).toBeTruthy();
+    expect(getByLabelText('現在位置にフォーカス')).toBeTruthy();
   });
 
   it('does not render a CircleLayer when there are no points', () => {

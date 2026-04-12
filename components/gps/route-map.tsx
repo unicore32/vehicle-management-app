@@ -6,8 +6,15 @@
  *    モジュールが取得できない場合はプレースホルダーを表示する。
  */
 import type MapLibreModule from '@maplibre/maplibre-react-native';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { buildRasterStyle } from '../../constants/map-config';
+import { useState } from 'react';
+import { Linking, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  buildRasterStyle,
+  getTileAttribution,
+  getTileAttributionUrl,
+  resolveTileServerKey,
+} from '../../constants/map-config';
 import type { CurrentLocation } from '../../hooks/use-current-location';
 import type { SessionPoint } from '../../lib/session-points-store';
 
@@ -32,6 +39,7 @@ if (MapLibreGL !== null) {
 /** 初期カメラ位置（ポイントがない場合のデフォルト: 東京） */
 const DEFAULT_CENTER: [number, number] = [139.6917, 35.6895];
 const DEFAULT_ZOOM = 10;
+const RECENTER_DISTANCE_THRESHOLD = 0.0003;
 
 // ─── 型定義 ───────────────────────────────────────────────────────────────────
 
@@ -42,6 +50,8 @@ type Props = {
   currentLocation?: CurrentLocation | null;
   /** コンテナに適用する追加スタイル（flex:1 や absoluteFill を渡せる） */
   style?: StyleProp<ViewStyle>;
+  /** 下部 UI を避けるためのリセンターボタン下余白 */
+  recenterBottomOffset?: number;
 };
 
 // ─── GeoJSON ヘルパー ─────────────────────────────────────────────────────────
@@ -68,6 +78,40 @@ function toPointGeoJSON(point: { longitude: number; latitude: number }) {
   };
 }
 
+function extractCenterCoordinate(event: unknown): [number, number] | null {
+  if (typeof event !== 'object' || event === null) return null;
+
+  const candidate = event as {
+    geometry?: { coordinates?: unknown };
+    properties?: { center?: unknown; visibleBounds?: unknown };
+  };
+
+  if (Array.isArray(candidate.geometry?.coordinates) && candidate.geometry.coordinates.length >= 2) {
+    const [longitude, latitude] = candidate.geometry.coordinates;
+    if (typeof longitude === 'number' && typeof latitude === 'number') {
+      return [longitude, latitude];
+    }
+  }
+
+  if (Array.isArray(candidate.properties?.center) && candidate.properties.center.length >= 2) {
+    const [longitude, latitude] = candidate.properties.center;
+    if (typeof longitude === 'number' && typeof latitude === 'number') {
+      return [longitude, latitude];
+    }
+  }
+
+  return null;
+}
+
+function isOutsideRecenterThreshold(
+  centerCoordinate: [number, number],
+  currentLocation: CurrentLocation,
+): boolean {
+  const longitudeDelta = Math.abs(centerCoordinate[0] - currentLocation.longitude);
+  const latitudeDelta = Math.abs(centerCoordinate[1] - currentLocation.latitude);
+  return longitudeDelta > RECENTER_DISTANCE_THRESHOLD || latitudeDelta > RECENTER_DISTANCE_THRESHOLD;
+}
+
 // ─── コンポーネント ───────────────────────────────────────────────────────────
 
 function MapUnavailablePlaceholder({ style }: { style?: StyleProp<ViewStyle> }) {
@@ -89,23 +133,51 @@ function MapUnavailablePlaceholder({ style }: { style?: StyleProp<ViewStyle> }) 
  * - ポイントがない場合は東京をデフォルト表示（MapLibre 利用可能時のみ）
  * - style prop でコンテナサイズを自由に制御可能
  */
-export function RouteMap({ points, currentLocation, style }: Props) {
+export function RouteMap({ points, currentLocation, style, recenterBottomOffset = 0 }: Props) {
+  const [cameraResetVersion, setCameraResetVersion] = useState(0);
+  const [showRecenterButton, setShowRecenterButton] = useState(false);
+  const { top, bottom } = useSafeAreaInsets();
+
   if (MapLibreGL === null) {
     return <MapUnavailablePlaceholder style={style} />;
   }
 
   const latest = points.length > 0 ? points[points.length - 1] : null;
-  const center: [number, number] = latest
-    ? [latest.longitude, latest.latitude]
-    : currentLocation !== null && currentLocation !== undefined
-      ? [currentLocation.longitude, currentLocation.latitude]
+  const center: [number, number] = currentLocation !== null && currentLocation !== undefined
+    ? [currentLocation.longitude, currentLocation.latitude]
+    : latest
+      ? [latest.longitude, latest.latitude]
       : DEFAULT_CENTER;
-  const zoom = latest
-    ? 14
-    : currentLocation !== null && currentLocation !== undefined
-      ? 16
+  const zoom = currentLocation !== null && currentLocation !== undefined
+    ? 16
+    : latest
+      ? 14
       : DEFAULT_ZOOM;
-  const mapStyle = JSON.stringify(buildRasterStyle('OSM'));
+  const tileServerKey = resolveTileServerKey(center);
+  const mapStyle = JSON.stringify(buildRasterStyle(tileServerKey));
+  const cameraKey = `${center[0]}:${center[1]}:${zoom}:${cameraResetVersion}`;
+  const compassMarginTop = top + 12;
+  const attributionTop = top + 72;
+  const recenterBottom = recenterBottomOffset > 0
+    ? recenterBottomOffset + 8
+    : bottom + 8;
+
+  function handleRegionDidChange(event: unknown) {
+    if (currentLocation === null || currentLocation === undefined) {
+      setShowRecenterButton(false);
+      return;
+    }
+
+    const centerCoordinate = extractCenterCoordinate(event);
+    if (centerCoordinate === null) return;
+
+    setShowRecenterButton(isOutsideRecenterThreshold(centerCoordinate, currentLocation));
+  }
+
+  function handleRecenterPress() {
+    setShowRecenterButton(false);
+    setCameraResetVersion((version) => version + 1);
+  }
 
   return (
     <View style={[styles.container, style]}>
@@ -114,12 +186,17 @@ export function RouteMap({ points, currentLocation, style }: Props) {
         mapStyle={mapStyle}
         logoEnabled={false}
         attributionEnabled={false}
+        compassViewPosition={1}
+        compassViewMargins={{ x: 12, y: compassMarginTop }}
+        onRegionDidChange={handleRegionDidChange}
         testID="route-map"
       >
         <MapLibreGL.Camera
+          key={cameraKey}
           centerCoordinate={center}
           zoomLevel={zoom}
           animationMode="moveTo"
+          testID="route-map-camera"
         />
 
         {/* ルートライン */}
@@ -151,7 +228,7 @@ export function RouteMap({ points, currentLocation, style }: Props) {
           </MapLibreGL.ShapeSource>
         )}
 
-        {latest === null && currentLocation !== null && currentLocation !== undefined && (
+        {currentLocation !== null && currentLocation !== undefined && (
           <MapLibreGL.ShapeSource
             id="current-location-source"
             shape={toPointGeoJSON(currentLocation)}
@@ -169,9 +246,33 @@ export function RouteMap({ points, currentLocation, style }: Props) {
         )}
       </MapLibreGL.MapView>
 
-      <View style={styles.attribution}>
-        <Text style={styles.attributionText}>© OpenStreetMap Contributors</Text>
+      <View style={[styles.attributionOverlay, { top: attributionTop }]} pointerEvents="box-none">
+        <TouchableOpacity
+          style={styles.attribution}
+          onPress={() => Linking.openURL(getTileAttributionUrl(tileServerKey))}
+          testID="route-map-attribution-link"
+        >
+          <Text style={styles.attributionText}>{getTileAttribution(tileServerKey)}</Text>
+        </TouchableOpacity>
       </View>
+
+      {showRecenterButton && (
+        <View style={[styles.recenterOverlay, { bottom: recenterBottom }]} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.recenterButton}
+            onPress={handleRecenterPress}
+            accessibilityRole="button"
+            accessibilityLabel="現在位置にフォーカス"
+            testID="route-map-recenter-button"
+          >
+            <View style={styles.recenterIconOuter}>
+              <View style={styles.recenterIconInner} />
+              <View style={[styles.recenterCrosshair, styles.recenterCrosshairVertical]} />
+              <View style={[styles.recenterCrosshair, styles.recenterCrosshairHorizontal]} />
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -191,17 +292,65 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
-  attribution: {
+  attributionOverlay: {
     position: 'absolute',
-    bottom: 6,
-    right: 8,
+    left: 12,
+    zIndex: 20,
+    elevation: 20,
+  },
+  recenterOverlay: {
+    position: 'absolute',
+    left: 12,
+    zIndex: 20,
+    elevation: 20,
+  },
+  recenterButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.25)',
+  },
+  recenterIconOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recenterIconInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22c55e',
+  },
+  recenterCrosshair: {
+    position: 'absolute',
+    backgroundColor: '#f8fafc',
+  },
+  recenterCrosshairVertical: {
+    width: 2,
+    height: 30,
+  },
+  recenterCrosshairHorizontal: {
+    width: 30,
+    height: 2,
+  },
+  attribution: {
+    alignSelf: 'flex-start',
   },
   attributionText: {
-    fontSize: 9,
-    color: '#94a3b8',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
+    fontSize: 10,
+    color: '#cbd5e1',
+    backgroundColor: 'rgba(2, 6, 23, 0.82)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
   },
 });

@@ -1,36 +1,36 @@
-# Specs
+# 仕様書
 
-This directory is for markdown-based feature specifications.
+このディレクトリには、Markdown ベースの機能仕様を配置する。
 
-## Suggested format
-- One file per feature or change
-- Keep it short and implementation-oriented
-- Write the current decision, not a full essay
+## 推奨フォーマット
+- 1 つの機能または変更につき 1 ファイルにする
+- 短くして、実装判断に使える内容へ絞る
+- 長い説明文ではなく、現時点の決定事項を書く
 
-## Template
+## テンプレート
 
-# <Feature name>
+# <機能名>
 
-## Goal
-- What problem this feature solves
+## 目的
+- この機能が解決する課題
 
-## Scope
-- What is included
-- What is out of scope
+## スコープ
+- 含めるもの
+- 対象外とするもの
 
-## Behavior
-- Main user flow
-- Edge cases
-- Error handling
+## 挙動
+- 主要なユーザーフロー
+- エッジケース
+- エラーハンドリング
 
-## Data model
-- Tables / fields / relationships
+## データモデル
+- テーブル / フィールド / リレーション
 
-## UI
-- Screens
-- Actions
-- Empty / loading / error states
+## 画面/UI
+- 画面
+- アクション
+- empty / loading / error 状態
 
-## Notes
-- Open questions
-- Future follow-ups
+## メモ
+- 未解決の論点
+- 将来のフォローアップ

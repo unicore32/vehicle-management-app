@@ -11,8 +11,14 @@
  */
 import type MapLibreModule from '@maplibre/maplibre-react-native';
 import { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
-import { buildRasterStyle } from '../../constants/map-config';
+import { Linking, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  buildRasterStyle,
+  getTileAttribution,
+  getTileAttributionUrl,
+  resolveTileServerKey,
+} from '../../constants/map-config';
 import type { SessionGap } from '../../lib/session-gaps-store';
 import type { SessionPoint } from '../../lib/session-points-store';
 
@@ -53,6 +59,8 @@ type Props = {
   style?: StyleProp<ViewStyle>;
   /** ボトムシートを避けるためのカメラ下余白 */
   cameraPaddingBottom?: number;
+  /** マップ内クレジット表示を有効化するか */
+  showAttribution?: boolean;
 };
 
 // ─── GeoJSON ヘルパー ─────────────────────────────────────────────────────────
@@ -135,8 +143,10 @@ export function RoutePreviewMap({
   currentTimestamp,
   style,
   cameraPaddingBottom = 0,
+  showAttribution = true,
 }: Props) {
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const { top } = useSafeAreaInsets();
 
   if (MapLibreGL === null) {
     return <MapUnavailablePlaceholder style={style} />;
@@ -153,8 +163,13 @@ export function RoutePreviewMap({
         ? [points[0].longitude, points[0].latitude]
         : DEFAULT_CENTER;
 
-  const mapStyle = JSON.stringify(buildRasterStyle('OSM'));
+  const tileServerKey = resolveTileServerKey(cameraCenter);
+  const mapStyle = JSON.stringify(buildRasterStyle(tileServerKey));
   const gapCollection = buildGapFeatureCollection(gaps, points, currentTimestamp);
+  const compassMarginTop = top + 20;
+  const compassMarginRight = 60;
+  const overlayTop = 12;
+  const attributionTop = top + 12;
 
   return (
     <View style={[styles.container, style]}>
@@ -163,6 +178,8 @@ export function RoutePreviewMap({
         mapStyle={mapStyle}
         logoEnabled={false}
         attributionEnabled={false}
+        compassViewPosition={1}
+        compassViewMargins={{ x: compassMarginRight, y: compassMarginTop }}
         testID='route-preview-map'
       >
         <MapLibreGL.Camera
@@ -170,6 +187,7 @@ export function RoutePreviewMap({
           zoomLevel={zoom}
           padding={{ paddingBottom: cameraPaddingBottom }}
           animationMode='moveTo'
+          testID='route-preview-map-camera'
         />
 
         {/* 全ルート（グレー背景線） */}
@@ -245,7 +263,7 @@ export function RoutePreviewMap({
       </MapLibreGL.MapView>
 
       {/* ズームボタン */}
-      <View style={styles.zoomButtons}>
+      <View style={[styles.zoomButtons, { top: overlayTop }]}>
         <TouchableOpacity
           style={styles.zoomButton}
           onPress={() => setZoom((z) => Math.min(z + 1, MAX_ZOOM))}
@@ -263,9 +281,17 @@ export function RoutePreviewMap({
         </TouchableOpacity>
       </View>
 
-      <View style={styles.attribution}>
-        <Text style={styles.attributionText}>© OpenStreetMap Contributors</Text>
-      </View>
+      {showAttribution && (
+        <View style={[styles.overlayColumn, { top: attributionTop }]} pointerEvents='box-none'>
+          <TouchableOpacity
+            style={styles.attribution}
+            onPress={() => Linking.openURL(getTileAttributionUrl(tileServerKey))}
+            testID='route-preview-attribution-link'
+          >
+            <Text style={styles.attributionText}>{getTileAttribution(tileServerKey)}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -287,13 +313,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
+  overlayColumn: {
+    position: 'absolute',
+    left: 12,
+    zIndex: 20,
+    elevation: 20,
+  },
   zoomButtons: {
     position: 'absolute',
     right: 12,
-    top: 12,
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
     borderRadius: 8,
     overflow: 'hidden',
+    zIndex: 20,
+    elevation: 20,
   },
   zoomButton: {
     width: 36,
@@ -312,16 +345,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
   },
   attribution: {
-    position: 'absolute',
-    bottom: 6,
-    right: 8,
+    alignSelf: 'flex-start',
   },
   attributionText: {
-    fontSize: 9,
-    color: '#94a3b8',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
+    fontSize: 10,
+    color: '#cbd5e1',
+    backgroundColor: 'rgba(2, 6, 23, 0.82)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
   },
 });

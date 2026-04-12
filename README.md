@@ -7,6 +7,7 @@ Personal-use GPS logger and vehicle management app (in active development).
 ## TL;DR
 - Purpose: record trip location history in background and expand into vehicle management.
 - Current state: GPS logging, SQLite persistence, route map, tests, and CI are in place.
+- Map behavior: Home shows the live current location and exposes a focus-current-location button only after the map is panned away from center; session detail keeps attribution in the top-left and zoom controls in the top-right.
 - Quality gate: run `pnpm run check` before pushing.
 
 ## Quick Start

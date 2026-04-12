@@ -1,23 +1,23 @@
-# GPS session foundation
+# GPS セッション基盤
 
-## Goal
-- Define the shared data model, navigation structure, settings, and reusable UI pieces used by GPS session features.
+## 目的
+- GPS セッション機能で共通して使うデータモデル、ナビゲーション構成、設定、再利用 UI を定義する。
 
-## Scope
-### Included
-- Shared session data model
-- App navigation layout
-- Settings surface shared by recording and review flows
-- Shared UI components used across GPS screens
-- Debug logging behavior
+## スコープ
+### 対象
+- 共通のセッション用データモデル
+- アプリのナビゲーション構成
+- 記録フローと閲覧フローで共有する設定画面
+- GPS 関連画面で横断利用する UI コンポーネント
+- デバッグログの挙動
 
-### Out of scope
-- Recording lifecycle rules
-- Gap detection and correction rules
-- GPX export details
-- Per-session summary logic
+### 対象外
+- 記録ライフサイクルのルール
+- ギャップ検出と補正のルール
+- GPX エクスポートの詳細仕様
+- セッション単位の集計ロジック
 
-## Data model
+## データモデル
 ### sessions
 - `id`
 - `started_at`
@@ -67,84 +67,90 @@
 - `is_background_notified`
 - `auto_pause_threshold_s`
 
-## UI
-### Navigation
-- No bottom tab bar.
-- The app uses stack navigation:
-  - Root: Home screen (`app/index.tsx`)
-  - Session list: accessible from the Home screen via a button
-  - Session detail: pushed from the session list (`app/session/[id].tsx`)
-  - Settings: accessible from the Home screen via a button
-- The explore / placeholder tab has been removed.
+## 画面/UI
+### ナビゲーション
+- ボトムタブバーは置かない。
+- アプリはスタックナビゲーションを使う。
+- ルートは Home 画面 (`app/index.tsx`)。
+- Session list は Home 画面からボタンで遷移できる。
+- Session detail は Session list から push 遷移する (`app/session/[id].tsx`)。
+- Settings は Home 画面からボタンで遷移できる。
+- explore / placeholder タブは削除済みとする。
 
-### Settings
-- Configuration screen for behavior that should not be hardcoded.
-- Includes a numeric GPS recording interval field, defaulting to 2 seconds.
-- Includes GPS precision settings.
-- Includes the auto-pause threshold and related stop-detection behavior.
-- Includes the gap detection threshold (default: 10 seconds, range: 5–300 seconds).
-- Includes background recording behavior and notification preferences.
-- Includes export behavior such as GPX filename rules or share flow.
-- Includes debug info for development use.
-- Includes an on/off switch for persistent debug log storage.
-- Includes export and full-delete actions for stored debug logs.
-- Retention settings can stay out of scope for now if not needed.
-- This screen should answer the question: "how should the app behave by default?"
+### 設定
+- ハードコードすべきでない挙動を設定する画面とする。
+- GPS 記録間隔を秒単位の数値入力で設定できるようにし、初期値は 2 秒とする。
+- GPS 精度設定を含める。
+- 自動一時停止の閾値と、それに関連する停止検出設定を含める。
+- ギャップ検出閾値を含める。既定値を 10 秒とし、範囲は 5〜300 秒とする。
+- バックグラウンド記録挙動と通知設定を含める。
+- GPX のファイル名ルールや共有フローなど、エクスポート挙動を含める。
+- 開発用のデバッグ情報を含める。
+- 永続デバッグログ保存のオン/オフ切り替えを含める。
+- 保存済みデバッグログのエクスポートと全削除アクションを含める。
+- 保持期間設定は、必要になるまでは対象外でよい。
+- この画面は、アプリのデフォルト挙動を説明できる内容にする。
 
-## Component split
-### Home
+## コンポーネント分割
+### ホーム画面
 - `RecordingControlCard`
 	- start / pause / resume / stop actions
-	- current state label
-- Live stats row (inline in Home screen, not a separate card)
-	- elapsed time, current speed (km/h), distance (km or m)
-	- visible only when session is active (recording or paused)
+	- 現在の状態ラベル
+- `RouteMap`
+	- 位置情報権限が許可されたら、Home ですぐ現在地マーカーを表示する
+	- attribution は左上に表示する
+	- 地図中心が現在地から外れたときだけ、左下付近に現在地へ戻すボタンを表示する
+- Live stats row (Home 画面内のインライン表示で、別カードにはしない)
+	- 経過時間、現在速度 (km/h)、距離 (km または m)
+	- セッションが active のときだけ表示する（recording または paused）
 - `BackgroundStatusBanner`
-	- background recording state
-	- notification-related hints
+	- バックグラウンド記録状態
+	- 通知に関する補足
 - `ErrorBanner`
-	- permission / GPS / pause-resume failures
-- top-right navigation buttons
-	- session list / settings shortcuts
+	- 権限 / GPS / pause-resume 失敗
+- 右上ナビゲーションボタン
+	- session list / settings へのショートカット
 
-### Session list
+### セッション一覧
 - `SessionListItem`
-	- date
-	- duration
-	- distance
-	- status
+	- 日付
+	- 時間
+	- 距離
+	- ステータス
 - `SessionListEmptyState`
-	- no-recording message
+	- 記録がないことを示すメッセージ
 - `SessionListHeader`
-	- overall summary preview
+	- 全体サマリーのプレビュー
 
-### Session detail
+### セッション詳細
 - `SessionDetailHeader`
-	- session date, status, summary
+	- セッション日付、ステータス、サマリー
 - `RoutePreviewMap`
-	- zoom controls
-	- route playback / scrubbing
-	- gap visibility
+	- ズーム操作
+	- attribution はセッション詳細の地図領域左上に表示する
+	- recenter / focus-current-location ボタンは表示しない
+	- ルート再生 / スクラブ
+	- ギャップの可視化
 - `RoutePlaybackSlider`
-	- time slider and playback position
+	- 時間スライダーと再生位置
 - `SessionDetailStats`
-	- distance, time, speed, point count
+	- 距離、時間、速度、ポイント数
 - `SessionDetailActions`
-	- export, delete, correction entry
+	- export、delete、補正画面への導線
 - `GapCorrectionPanel`
-	- missing-segment list and correction entry points
+	- 欠損区間一覧と補正導線
 
-### Settings
+### 設定画面
 - `AutoPauseSettings`
-	- threshold and stop detection related controls
+	- 閾値と停止検出に関する設定
 - `BackgroundBehaviorSettings`
-	- background notification and logging rules
+	- バックグラウンド通知とログ挙動の設定
 - `ExportSettings`
-	- GPX naming and share behavior
+	- GPX 命名規則と共有挙動
 - `DebugSettings`
-	- development-only details
+	- 開発用の詳細設定
 
-### Shared pieces
+### 共通要素
 - `ConfirmDialog`
 - `StatusChip`
 - `MetricRow`
@@ -152,12 +158,12 @@
 - `ErrorState`
 - `LoadingState`
 
-### Debug logging
-- Debug output should continue to appear in the development console.
-- When persistent debug logging is enabled, logs should be stored with timestamp and message content.
-- Log export should share a plain-text file.
-- A full delete action should remove all stored debug logs.
+### デバッグログ
+- デバッグ出力は引き続き開発コンソールに表示する。
+- 永続デバッグログが有効な場合、ログはタイムスタンプとメッセージ内容付きで保存する。
+- ログエクスポートはプレーンテキストファイルとして共有する。
+- 全削除アクションでは保存済みデバッグログをすべて削除する。
 
-## Notes
-- Keep the implementation compatible with current SQLite-first architecture.
-- Session modeling should be introduced before feature growth continues.
+## メモ
+- 実装は現在の SQLite-first アーキテクチャとの互換性を維持する。
+- セッションモデリングは、機能拡張を続ける前に導入する。

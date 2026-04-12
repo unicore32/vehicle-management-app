@@ -29,10 +29,42 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint
+        id: lint
+        continue-on-error: true
         run: pnpm run lint
 
+      - name: Docs lint
+        id: lint_docs
+        continue-on-error: true
+        run: pnpm run lint:docs
+
       - name: Typecheck
+        id: typecheck
+        continue-on-error: true
         run: pnpm run typecheck
 
       - name: Test
+        id: test
+        continue-on-error: true
         run: pnpm run test
+
+      - name: Summarize verification results
+        if: always()
+        run: |
+          {
+            echo '## Verification results'
+            echo ''
+            echo '| Check | Result |'
+            echo '| --- | --- |'
+            echo '| Lint | ${{ steps.lint.outcome }} |'
+            echo '| Docs lint | ${{ steps.lint_docs.outcome }} |'
+            echo '| Typecheck | ${{ steps.typecheck.outcome }} |'
+            echo '| Test | ${{ steps.test.outcome }} |'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${{ steps.lint.outcome }}" != 'success' \
+             || "${{ steps.lint_docs.outcome }}" != 'success' \
+             || "${{ steps.typecheck.outcome }}" != 'success' \
+             || "${{ steps.test.outcome }}" != 'success' ]]; then
+            exit 1
+          fi

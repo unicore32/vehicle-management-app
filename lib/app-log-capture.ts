@@ -1,8 +1,7 @@
-import * as SQLite from 'expo-sqlite';
 import {
     getDebugLoggingEnabledSync,
 } from './app-state-store';
-import { CREATE_APP_STATE_TABLE } from './database/schema';
+import { getMainSyncDatabase } from './database/sync-client';
 import {
     appendDebugLogSync,
 } from './debug-log-store';
@@ -44,17 +43,12 @@ function persistAppLogIfEnabled(level: ConsoleMethod, args: CapturedValue[]): vo
   try {
     if (typeof args[0] === 'string' && args[0].startsWith('[GPS]')) return;
 
-    const db = SQLite.openDatabaseSync('gps_logger.db');
-    try {
-      db.execSync(CREATE_APP_STATE_TABLE);
-      if (!getDebugLoggingEnabledSync(db)) return;
+    const db = getMainSyncDatabase();
+    if (!getDebugLoggingEnabledSync(db)) return;
 
-      appendDebugLogSync(db, {
-        message: `[APP][${level}] ${formatArgs(args)}`,
-      });
-    } finally {
-      db.closeSync();
-    }
+    appendDebugLogSync(db, {
+      message: `[APP][${level}] ${formatArgs(args)}`,
+    });
   } catch {
     // ベストエフォート
   }
