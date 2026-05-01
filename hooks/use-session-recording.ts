@@ -8,7 +8,11 @@ import {
   isBackgroundTaskRunning,
   getActiveSession,
 } from '../services/gps-service';
-import { updateSessionStatus } from '../lib/session-store';
+import {
+  updateSessionStatus,
+  type StartSessionInput,
+  type StopSessionInput,
+} from '../lib/session-store';
 import { SESSION_POINTS_QUERY_KEY, SESSION_QUERY_KEY } from '../constants/task-names';
 
 /** 自動一時停止検知のポーリング間隔 [ms] */
@@ -38,13 +42,13 @@ export type SessionRecordingState = {
   /** 直近のエラーメッセージ（エラーなしの場合は null） */
   error: string | null;
   /** 新規セッションを作成して記録開始 */
-  start: () => Promise<void>;
+  start: (input?: StartSessionInput) => Promise<void>;
   /** 記録を一時停止（セッションは維持） */
   pause: () => Promise<void>;
   /** 一時停止中のセッションを再開 */
   resume: () => Promise<void>;
   /** セッションを完了して記録終了 */
-  stop: () => Promise<void>;
+  stop: (input?: StopSessionInput) => Promise<void>;
 };
 
 // ─── Hook 実装 ────────────────────────────────────────────────────────────────
@@ -148,11 +152,11 @@ export function useSessionRecording(): SessionRecordingState {
 
   // ── 操作 ─────────────────────────────────────────────────────────────────
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (input?: StartSessionInput) => {
     setStatus('loading');
     setError(null);
     try {
-      const session = await startRecordingService();
+      const session = await startRecordingService(input);
       queryClient.removeQueries({ queryKey: [SESSION_POINTS_QUERY_KEY] });
       setActiveSessionId(session.id);
       setActiveSessionStartedAt(session.started_at);
@@ -163,6 +167,7 @@ export function useSessionRecording(): SessionRecordingState {
       setStatus('idle');
       setActiveSessionId(null);
       setActiveSessionStartedAt(null);
+      throw e;
     }
   }, [queryClient]);
 
@@ -192,12 +197,12 @@ export function useSessionRecording(): SessionRecordingState {
     }
   }, [activeSessionId]);
 
-  const stop = useCallback(async () => {
+  const stop = useCallback(async (input?: StopSessionInput) => {
     if (activeSessionId === null) return;
     setStatus('loading');
     setError(null);
     try {
-      await stopRecordingService(activeSessionId);
+      await stopRecordingService(activeSessionId, input);
       queryClient.removeQueries({ queryKey: [SESSION_POINTS_QUERY_KEY] });
       setActiveSessionId(null);
       setActiveSessionStartedAt(null);
@@ -207,6 +212,7 @@ export function useSessionRecording(): SessionRecordingState {
       setError(e instanceof Error ? e.message : '停止に失敗しました');
       // 停止失敗時は recording に戻さず paused に落とす（安全側）
       setStatus('paused');
+      throw e;
     }
   }, [activeSessionId, queryClient]);
 

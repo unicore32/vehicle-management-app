@@ -10,7 +10,7 @@
  *    Expo Go では動作しない（development build 専用）。
  */
 import type MapLibreModule from '@maplibre/maplibre-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -45,6 +45,8 @@ const DEFAULT_CENTER: [number, number] = [139.6917, 35.6895];
 const DEFAULT_ZOOM = 15;
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 20;
+const CAMERA_EPSILON = 0.000001;
+const ZOOM_EPSILON = 0.01;
 
 // ─── 型定義 ───────────────────────────────────────────────────────────────────
 
@@ -219,6 +221,20 @@ function extractZoomLevel(event: unknown): number | null {
   return typeof zoomCandidate === 'number' ? zoomCandidate : null;
 }
 
+function areCoordinatesClose(
+  left: [number, number],
+  right: [number, number],
+): boolean {
+  return (
+    Math.abs(left[0] - right[0]) <= CAMERA_EPSILON
+    && Math.abs(left[1] - right[1]) <= CAMERA_EPSILON
+  );
+}
+
+function areZoomLevelsClose(left: number, right: number): boolean {
+  return Math.abs(left - right) <= ZOOM_EPSILON;
+}
+
 // ─── サブコンポーネント ────────────────────────────────────────────────────────
 
 function MapUnavailablePlaceholder({ style }: { style?: StyleProp<ViewStyle> }) {
@@ -254,6 +270,10 @@ export function RoutePreviewMap({
   const [followPlayback, setFollowPlayback] = useState(true);
   const [effectiveCameraPaddingBottom, setEffectiveCameraPaddingBottom] = useState(cameraPaddingBottom);
   const lastPaddingSyncTimestampRef = useRef<number | null>(null);
+  const lastProgrammaticCameraRef = useRef<{
+    center: [number, number];
+    zoom: number;
+  } | null>(null);
   const { top } = useSafeAreaInsets();
 
   const tileServerKey = resolveTileServerKey(cameraCenter);
@@ -268,19 +288,24 @@ export function RoutePreviewMap({
   const overlayTop = 12;
   const attributionTop = top + 12;
 
+  const applyProgrammaticCameraUpdate = useCallback((nextCenter: [number, number], nextZoom: number) => {
+    lastProgrammaticCameraRef.current = {
+      center: nextCenter,
+      zoom: nextZoom,
+    };
+
+    setCameraCenter((previousCenter) => (
+      areCoordinatesClose(previousCenter, nextCenter) ? previousCenter : nextCenter
+    ));
+    setCameraZoom((previousZoom) => (
+      areZoomLevelsClose(previousZoom, nextZoom) ? previousZoom : nextZoom
+    ));
+  }, []);
+
   useEffect(() => {
     if (!followPlayback) return;
-    setCameraCenter((previousCenter) => {
-      if (
-        previousCenter[0] === playbackCenter[0]
-        && previousCenter[1] === playbackCenter[1]
-      ) {
-        return previousCenter;
-      }
-
-      return playbackCenter;
-    });
-  }, [followPlayback, playbackCenter[0], playbackCenter[1]]);
+    applyProgrammaticCameraUpdate(playbackCenter, cameraZoom);
+  }, [applyProgrammaticCameraUpdate, cameraZoom, followPlayback, playbackCenter[0], playbackCenter[1]]);
 
   useEffect(() => {
     if (!followPlayback) {
@@ -312,9 +337,22 @@ export function RoutePreviewMap({
 
     if (nextCenter === null && nextZoom === null) return;
 
+    if (lastProgrammaticCameraRef.current !== null) {
+      const centerMatches = nextCenter === null
+        || areCoordinatesClose(nextCenter, lastProgrammaticCameraRef.current.center);
+      const zoomMatches = nextZoom === null
+        || areZoomLevelsClose(nextZoom, lastProgrammaticCameraRef.current.zoom);
+
+      if (centerMatches && zoomMatches) {
+        return;
+      }
+
+      lastProgrammaticCameraRef.current = null;
+    }
+
     const centerChanged = nextCenter !== null
-      && (nextCenter[0] !== cameraCenter[0] || nextCenter[1] !== cameraCenter[1]);
-    const zoomChanged = nextZoom !== null && nextZoom !== cameraZoom;
+      && !areCoordinatesClose(nextCenter, cameraCenter);
+    const zoomChanged = nextZoom !== null && !areZoomLevelsClose(nextZoom, cameraZoom);
 
     if (!centerChanged && !zoomChanged) return;
 
@@ -424,7 +462,11 @@ export function RoutePreviewMap({
       <View style={[styles.zoomButtons, { top: overlayTop }]}>
         <TouchableOpacity
           style={styles.zoomButton}
-          onPress={() => setCameraZoom((z) => Math.min(z + 1, MAX_ZOOM))}
+          onPress={() => {
+            const nextZoom = Math.min(cameraZoom + 1, MAX_ZOOM);
+            setFollowPlayback(false);
+            applyProgrammaticCameraUpdate(cameraCenter, nextZoom);
+          }}
           testID='zoom-in-button'
         >
           <Text style={styles.zoomButtonText}>＋</Text>
@@ -432,7 +474,11 @@ export function RoutePreviewMap({
         <View style={styles.zoomDivider} />
         <TouchableOpacity
           style={styles.zoomButton}
-          onPress={() => setCameraZoom((z) => Math.max(z - 1, MIN_ZOOM))}
+          onPress={() => {
+            const nextZoom = Math.max(cameraZoom - 1, MIN_ZOOM);
+            setFollowPlayback(false);
+            applyProgrammaticCameraUpdate(cameraCenter, nextZoom);
+          }}
           testID='zoom-out-button'
         >
           <Text style={styles.zoomButtonText}>－</Text>

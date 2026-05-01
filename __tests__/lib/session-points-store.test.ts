@@ -257,7 +257,9 @@ describe('computeLiveDistance', () => {
   it('fetches only latitude and longitude columns', async () => {
     await computeLiveDistance(1);
 
-    const sql = (mockDb.getAllAsync.mock.calls[0] as unknown[])[0] as string;
+    const sql = mockDb.getAllAsync.mock.calls
+      .map((call) => call[0] as string)
+      .find((statement) => statement.includes('SELECT latitude, longitude'));
     expect(sql).toContain('SELECT latitude, longitude');
   });
 });

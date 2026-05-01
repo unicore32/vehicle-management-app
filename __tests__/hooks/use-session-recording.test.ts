@@ -39,6 +39,9 @@ function session(partial: Pick<Session, 'id' | 'status'>): Session {
     started_at: 1_700_000_000_000,
     ended_at: null,
     status: partial.status,
+    vehicle_id: null,
+    odometer_start_km: null,
+    odometer_end_km: null,
     is_background_active: 0,
     paused_reason: null,
     distance_m: 0,
@@ -141,7 +144,9 @@ describe('start()', () => {
     const { result } = renderHook(() => useSessionRecording(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.status).toBe('idle'));
 
-    await act(async () => { await result.current.start(); });
+    await act(async () => {
+      await expect(result.current.start()).rejects.toThrow('権限が拒否されました');
+    });
 
     expect(result.current.status).toBe('idle');
     expect(result.current.activeSessionStartedAt).toBeNull();
@@ -224,7 +229,7 @@ describe('stop()', () => {
     expect(result.current.status).toBe('idle');
     expect(result.current.activeSessionId).toBeNull();
     expect(result.current.activeSessionStartedAt).toBeNull();
-    expect(gpsService.stopRecordingService).toHaveBeenCalledWith(3);
+    expect(gpsService.stopRecordingService).toHaveBeenCalledWith(3, undefined);
   });
 
   it('transitions paused → idle', async () => {
@@ -248,7 +253,9 @@ describe('stop()', () => {
     const { result } = renderHook(() => useSessionRecording(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.status).toBe('recording'));
 
-    await act(async () => { await result.current.stop(); });
+    await act(async () => {
+      await expect(result.current.stop()).rejects.toThrow('停止に失敗しました');
+    });
 
     expect(result.current.status).toBe('paused');
     expect(result.current.error).toBe('停止に失敗しました');

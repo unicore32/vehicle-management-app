@@ -3,12 +3,14 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { Alert, Linking, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { GapCorrectionPanel } from '../../components/gps/gap-correction-panel';
 import { RoutePlaybackSlider } from '../../components/gps/route-playback-slider';
 import { RoutePreviewMap } from '../../components/gps/route-preview-map';
 import { SessionDetailActions } from '../../components/gps/session-detail-actions';
 import { SessionDetailStats } from '../../components/gps/session-detail-stats';
+import { SessionVehicleInfo } from '../../components/gps/session-vehicle-info';
+import { SessionVehicleModal } from '../../components/gps/session-vehicle-modal';
 import { ConfirmDialog } from '../../components/shared/confirm-dialog';
 import { ErrorState } from '../../components/shared/error-state';
 import { LoadingState } from '../../components/shared/loading-state';
@@ -17,10 +19,25 @@ import {
   getTileAttributionUrl,
   resolveTileServerKey,
 } from '../../constants/map-config';
-import { SESSION_DETAIL_QUERY_KEY } from '../../constants/task-names';
-import { useDeleteSession, useSessionDetail } from '../../hooks/use-session-detail';
+import { SESSION_DETAIL_QUERY_KEY, VEHICLES_QUERY_KEY } from '../../constants/task-names';
+import {
+  useDeleteSession,
+  useSessionDetail,
+  useUpdateSessionVehicleInfo,
+} from '../../hooks/use-session-detail';
 import { useSessionPlayback } from '../../hooks/use-session-playback';
 import { exportGpx } from '../../lib/gpx-export';
+import { getVehicles } from '../../lib/vehicle-store';
+
+function parseOdometerInput(value: string): number | null {
+  const normalized = value.trim();
+  if (normalized.length === 0) return null;
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error('メーター距離は 0 以上の整数で入力してください');
+  }
+
+  return Number(normalized);
+}
 
 function formatDistance(meters: number): string {
   if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
@@ -45,9 +62,20 @@ export default function SessionDetailScreen() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = useSessionDetail(sessionId);
   const { mutate: deleteSession, isPending: isDeleting } = useDeleteSession();
+  const { mutateAsync: updateVehicleInfo, isPending: isSavingVehicleInfo } = useUpdateSessionVehicleInfo();
+  const { data: vehicles = [] } = useQuery({
+    queryKey: [VEHICLES_QUERY_KEY, 'all'],
+    queryFn: () => getVehicles({ includeInactive: true }),
+    staleTime: 30_000,
+  });
 
   const [isExporting, setIsExporting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showVehicleEditor, setShowVehicleEditor] = useState(false);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
+  const [startOdometerInput, setStartOdometerInput] = useState('');
+  const [endOdometerInput, setEndOdometerInput] = useState('');
+  const [vehicleEditorError, setVehicleEditorError] = useState<string | null>(null);
   const [sheetIndex, setSheetIndex] = useState(0);
   const { height: windowHeight } = useWindowDimensions();
   const bottomSheetRef = useRef<BottomSheet>(null);
@@ -105,6 +133,32 @@ export default function SessionDetailScreen() {
       onSuccess: () => router.back(),
       onError: () => Alert.alert('エラー', '削除に失敗しました'),
     });
+  }
+
+  function openVehicleEditor() {
+    setSelectedVehicleId(session.vehicle_id);
+    setStartOdometerInput(session.odometer_start_km !== null ? String(session.odometer_start_km) : '');
+    setEndOdometerInput(session.odometer_end_km !== null ? String(session.odometer_end_km) : '');
+    setVehicleEditorError(null);
+    setShowVehicleEditor(true);
+  }
+
+  async function handleVehicleEditorConfirm() {
+    try {
+      const odometerStartKm = selectedVehicleId === null ? null : parseOdometerInput(startOdometerInput);
+      const odometerEndKm = selectedVehicleId === null ? null : parseOdometerInput(endOdometerInput);
+      await updateVehicleInfo({
+        sessionId,
+        input: {
+          vehicleId: selectedVehicleId,
+          odometerStartKm,
+          odometerEndKm,
+        },
+      });
+      setShowVehicleEditor(false);
+    } catch (e) {
+      setVehicleEditorError(e instanceof Error ? e.message : '車両情報の更新に失敗しました');
+    }
   }
 
   return (
@@ -227,6 +281,10 @@ export default function SessionDetailScreen() {
             </View>
 
             <SessionDetailStats session={session} />
+            <SessionVehicleInfo
+              session={session}
+              onEdit={session.status === 'finished' ? openVehicleEditor : undefined}
+            />
             <GapCorrectionPanel
               gaps={gaps}
               points={points}
@@ -253,6 +311,37 @@ export default function SessionDetailScreen() {
         onConfirm={handleDeleteConfirm}
         onCancel={() => setShowDeleteDialog(false)}
         destructive
+      />
+
+      <SessionVehicleModal
+        visible={showVehicleEditor}
+        title='車両情報を編集'
+        confirmLabel='保存'
+        description='完了済みセッションの車両と開始/終了メーター距離を更新します。'
+        vehicles={vehicles}
+        selectedVehicleId={selectedVehicleId}
+        startOdometerValue={startOdometerInput}
+        endOdometerValue={endOdometerInput}
+        errorMessage={vehicleEditorError}
+        isSubmitting={isSavingVehicleInfo}
+        onSelectVehicle={(vehicleId) => {
+          setSelectedVehicleId(vehicleId);
+          if (vehicleId === null) {
+            setStartOdometerInput('');
+            setEndOdometerInput('');
+          }
+          setVehicleEditorError(null);
+        }}
+        onChangeStartOdometer={(value) => {
+          setStartOdometerInput(value);
+          setVehicleEditorError(null);
+        }}
+        onChangeEndOdometer={(value) => {
+          setEndOdometerInput(value);
+          setVehicleEditorError(null);
+        }}
+        onConfirm={handleVehicleEditorConfirm}
+        onCancel={() => setShowVehicleEditor(false)}
       />
     </View>
   );

@@ -3,6 +3,7 @@ import {
   CREATE_APP_STATE_TABLE,
   CREATE_DEBUG_LOGS_CREATED_AT_INDEX,
   CREATE_DEBUG_LOGS_TABLE,
+  CREATE_SESSIONS_VEHICLE_ID_INDEX,
   CREATE_SESSIONS_STARTED_AT_INDEX,
   CREATE_SESSIONS_STATUS_INDEX,
   CREATE_SESSIONS_TABLE,
@@ -10,6 +11,8 @@ import {
   CREATE_SESSION_GAPS_TABLE,
   CREATE_SESSION_POINTS_SESSION_INDEX,
   CREATE_SESSION_POINTS_TABLE,
+  CREATE_VEHICLES_ACTIVE_INDEX,
+  CREATE_VEHICLES_TABLE,
 } from './schema';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -19,6 +22,40 @@ let db: SQLite.SQLiteDatabase | null = null;
  * openDatabaseAsync が一度だけ実行されることを保証する。
  */
 let dbInitPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+
+type TableInfoRow = {
+  name: string;
+};
+
+async function hasColumn(
+  connection: SQLite.SQLiteDatabase,
+  tableName: string,
+  columnName: string,
+): Promise<boolean> {
+  const rows = await connection.getAllAsync<TableInfoRow>(`PRAGMA table_info(${tableName})`);
+  return rows.some((row) => row.name === columnName);
+}
+
+async function ensureColumn(
+  connection: SQLite.SQLiteDatabase,
+  tableName: string,
+  columnName: string,
+  definition: string,
+): Promise<void> {
+  if (await hasColumn(connection, tableName, columnName)) {
+    return;
+  }
+
+  await connection.execAsync(
+    `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`,
+  );
+}
+
+async function ensureSchemaEvolution(connection: SQLite.SQLiteDatabase): Promise<void> {
+  await ensureColumn(connection, 'sessions', 'vehicle_id', 'INTEGER');
+  await ensureColumn(connection, 'sessions', 'odometer_start_km', 'INTEGER');
+  await ensureColumn(connection, 'sessions', 'odometer_end_km', 'INTEGER');
+}
 
 /**
  * SQLite データベースのシングルトンインスタンスを返す。
@@ -46,9 +83,13 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
     await connection.execAsync('PRAGMA foreign_keys = ON;');
 
     // テーブル & インデックスを冪等に作成
+    await connection.execAsync(CREATE_VEHICLES_TABLE);
+    await connection.execAsync(CREATE_VEHICLES_ACTIVE_INDEX);
     await connection.execAsync(CREATE_SESSIONS_TABLE);
+    await ensureSchemaEvolution(connection);
     await connection.execAsync(CREATE_SESSIONS_STATUS_INDEX);
     await connection.execAsync(CREATE_SESSIONS_STARTED_AT_INDEX);
+    await connection.execAsync(CREATE_SESSIONS_VEHICLE_ID_INDEX);
     await connection.execAsync(CREATE_SESSION_POINTS_TABLE);
     await connection.execAsync(CREATE_SESSION_POINTS_SESSION_INDEX);
     await connection.execAsync(CREATE_SESSION_GAPS_TABLE);

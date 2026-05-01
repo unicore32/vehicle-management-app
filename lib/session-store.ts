@@ -9,6 +9,9 @@ export type Session = {
   started_at: number;
   ended_at: number | null;
   status: SessionStatus;
+  vehicle_id: number | null;
+  odometer_start_km: number | null;
+  odometer_end_km: number | null;
   /** 1 = バックグラウンド記録中 */
   is_background_active: 0 | 1;
   paused_reason: string | null;
@@ -20,6 +23,7 @@ export type Session = {
   note: string | null;
   created_at: number;
   updated_at: number;
+  vehicle_display_name?: string | null;
 };
 
 export type SessionStats = {
@@ -35,30 +39,137 @@ export type CreatedSession = {
   started_at: number;
 };
 
+export type StartSessionInput = {
+  vehicleId?: number | null;
+  odometerStartKm?: number | null;
+};
+
+export type StopSessionInput = {
+  odometerEndKm?: number | null;
+};
+
+export type UpdateSessionVehicleInfoInput = {
+  vehicleId: number | null;
+  odometerStartKm: number | null;
+  odometerEndKm: number | null;
+};
+
+const SESSION_SELECT = `
+  SELECT sessions.*, vehicles.display_name AS vehicle_display_name
+  FROM sessions
+  LEFT JOIN vehicles ON vehicles.id = sessions.vehicle_id
+`;
+
+function normalizeOdometerKm(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error('メーター距離は 0 以上の整数で入力してください');
+  }
+  return value;
+}
+
+function normalizeVehicleSessionInput<T extends {
+  vehicleId?: number | null;
+  odometerStartKm?: number | null;
+  odometerEndKm?: number | null;
+}>(input?: T) {
+  const vehicleId = input?.vehicleId ?? null;
+  if (vehicleId === null) {
+    return {
+      vehicleId: null,
+      odometerStartKm: null,
+      odometerEndKm: null,
+    };
+  }
+
+  const odometerStartKm = normalizeOdometerKm(input?.odometerStartKm);
+  const odometerEndKm = normalizeOdometerKm(input?.odometerEndKm);
+
+  if (
+    odometerStartKm !== null &&
+    odometerEndKm !== null &&
+    odometerEndKm < odometerStartKm
+  ) {
+    throw new Error('終了メーター距離は開始メーター距離以上にしてください');
+  }
+
+  return {
+    vehicleId,
+    odometerStartKm,
+    odometerEndKm,
+  };
+}
+
+type SessionVehicleValidationRow = {
+  vehicle_id: number | null;
+  odometer_start_km: number | null;
+};
+
+async function validateStopSessionInput(
+  sessionId: number,
+  input?: StopSessionInput,
+): Promise<number | null> {
+  const odometerEndKm = normalizeOdometerKm(input?.odometerEndKm);
+  if (odometerEndKm === null) {
+    return null;
+  }
+
+  const db = await getDatabase();
+  const session = await db.getFirstAsync<SessionVehicleValidationRow>(
+    `SELECT vehicle_id, odometer_start_km
+     FROM sessions
+     WHERE id = ?`,
+    sessionId,
+  );
+
+  if (session === null) {
+    throw new Error('対象のセッションが見つかりません');
+  }
+
+  if (session.vehicle_id === null) {
+    throw new Error('車両未選択のセッションには終了メーター距離を保存できません');
+  }
+
+  if (
+    session.odometer_start_km !== null &&
+    odometerEndKm < session.odometer_start_km
+  ) {
+    throw new Error('終了メーター距離は開始メーター距離以上にしてください');
+  }
+
+  return odometerEndKm;
+}
+
 // ─── 書き込み ─────────────────────────────────────────────────────────────────
 
 /**
  * 新しいセッションを作成して ID を返す。
  * GPS 記録開始時に呼ぶ。
  */
-export async function createSession(): Promise<number> {
-  return (await createSessionRecord()).id;
+export async function createSession(input?: StartSessionInput): Promise<number> {
+  return (await createSessionRecord(input)).id;
 }
 
 /**
  * 新しいセッションを作成し、ID と started_at を返す。
  * 開始直後の UI が points 到着を待たずに安定表示できるようにする。
  */
-export async function createSessionRecord(): Promise<CreatedSession> {
+export async function createSessionRecord(input?: StartSessionInput): Promise<CreatedSession> {
   const db = await getDatabase();
   const now = Date.now();
+  const normalized = normalizeVehicleSessionInput(input);
   const result = await db.runAsync(
     `INSERT INTO sessions
-       (started_at, status, is_background_active,
+       (started_at, status, vehicle_id, odometer_start_km, odometer_end_km, is_background_active,
         distance_m, moving_time_s, avg_speed, max_speed, point_count,
         created_at, updated_at)
-     VALUES (?, 'recording', 0, 0, 0, 0, 0, 0, ?, ?)`,
-    now, now, now,
+     VALUES (?, 'recording', ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?)`,
+    now,
+    normalized.vehicleId,
+    normalized.odometerStartKm,
+    normalized.odometerEndKm,
+    now,
+    now,
   );
   return {
     id: result.lastInsertRowId,
@@ -94,13 +205,16 @@ export async function updateSessionStatus(
 export async function finishSession(
   sessionId: number,
   stats: SessionStats,
+  input?: StopSessionInput,
 ): Promise<void> {
   const db = await getDatabase();
   const now = Date.now();
+  const odometerEndKm = await validateStopSessionInput(sessionId, input);
   await db.runAsync(
     `UPDATE sessions
      SET status       = 'finished',
          ended_at     = ?,
+         odometer_end_km = ?,
          distance_m   = ?,
          moving_time_s = ?,
          avg_speed    = ?,
@@ -110,12 +224,34 @@ export async function finishSession(
          updated_at   = ?
      WHERE id = ?`,
     now,
+    odometerEndKm,
     stats.distance_m,
     stats.moving_time_s,
     stats.avg_speed,
     stats.max_speed,
     stats.point_count,
     now,
+    sessionId,
+  );
+}
+
+export async function updateSessionVehicleInfo(
+  sessionId: number,
+  input: UpdateSessionVehicleInfoInput,
+): Promise<void> {
+  const db = await getDatabase();
+  const normalized = normalizeVehicleSessionInput(input);
+  await db.runAsync(
+    `UPDATE sessions
+     SET vehicle_id = ?,
+         odometer_start_km = ?,
+         odometer_end_km = ?,
+         updated_at = ?
+     WHERE id = ?`,
+    normalized.vehicleId,
+    normalized.odometerStartKm,
+    normalized.odometerEndKm,
+    Date.now(),
     sessionId,
   );
 }
@@ -155,7 +291,7 @@ export async function deleteSession(sessionId: number): Promise<void> {
 export async function getActiveSession(): Promise<Session | null> {
   const db = await getDatabase();
   return db.getFirstAsync<Session>(
-    `SELECT * FROM sessions
+    `${SESSION_SELECT}
      WHERE status IN ('recording', 'paused')
      ORDER BY started_at DESC
      LIMIT 1`,
@@ -168,7 +304,7 @@ export async function getActiveSession(): Promise<Session | null> {
 export async function getSession(sessionId: number): Promise<Session | null> {
   const db = await getDatabase();
   return db.getFirstAsync<Session>(
-    'SELECT * FROM sessions WHERE id = ?',
+    `${SESSION_SELECT} WHERE sessions.id = ?`,
     sessionId,
   );
 }
@@ -182,12 +318,12 @@ export async function getSessions(limit?: number): Promise<Session[]> {
   const db = await getDatabase();
   if (limit !== undefined) {
     return db.getAllAsync<Session>(
-      'SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?',
+      `${SESSION_SELECT} ORDER BY sessions.started_at DESC LIMIT ?`,
       limit,
     );
   }
   return db.getAllAsync<Session>(
-    'SELECT * FROM sessions ORDER BY started_at DESC',
+    `${SESSION_SELECT} ORDER BY sessions.started_at DESC`,
   );
 }
 

@@ -6,7 +6,7 @@
  *    モジュールが取得できない場合はプレースホルダーを表示する。
  */
 import type MapLibreModule from '@maplibre/maplibre-react-native';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -40,6 +40,8 @@ if (MapLibreGL !== null) {
 const DEFAULT_CENTER: [number, number] = [139.6917, 35.6895];
 const DEFAULT_ZOOM = 10;
 const RECENTER_DISTANCE_THRESHOLD = 0.0003;
+const CAMERA_EPSILON = 0.000001;
+const ZOOM_EPSILON = 0.01;
 
 // ─── 型定義 ───────────────────────────────────────────────────────────────────
 
@@ -123,6 +125,20 @@ function isOutsideRecenterThreshold(
   return longitudeDelta > RECENTER_DISTANCE_THRESHOLD || latitudeDelta > RECENTER_DISTANCE_THRESHOLD;
 }
 
+function areCoordinatesClose(
+  left: [number, number],
+  right: [number, number],
+): boolean {
+  return (
+    Math.abs(left[0] - right[0]) <= CAMERA_EPSILON
+    && Math.abs(left[1] - right[1]) <= CAMERA_EPSILON
+  );
+}
+
+function areZoomLevelsClose(left: number, right: number): boolean {
+  return Math.abs(left - right) <= ZOOM_EPSILON;
+}
+
 // ─── コンポーネント ───────────────────────────────────────────────────────────
 
 function MapUnavailablePlaceholder({ style }: { style?: StyleProp<ViewStyle> }) {
@@ -163,6 +179,11 @@ export function RouteMap({ points, currentLocation, style, recenterBottomOffset 
   const [cameraCenter, setCameraCenter] = useState<[number, number]>(initialCenter);
   const [cameraZoom, setCameraZoom] = useState(initialZoom);
   const [showRecenterButton, setShowRecenterButton] = useState(false);
+  const hasManualCameraOverrideRef = useRef(false);
+  const lastProgrammaticCameraRef = useRef<{
+    center: [number, number];
+    zoom: number;
+  } | null>(null);
   const { top, bottom } = useSafeAreaInsets();
 
   const followTargetCenter: [number, number] = currentLocation !== null && currentLocation !== undefined
@@ -178,25 +199,35 @@ export function RouteMap({ points, currentLocation, style, recenterBottomOffset 
     ? recenterBottomOffset + 8
     : bottom + 8;
 
+  const applyProgrammaticCameraUpdate = useCallback((nextCenter: [number, number], nextZoom: number) => {
+    lastProgrammaticCameraRef.current = {
+      center: nextCenter,
+      zoom: nextZoom,
+    };
+
+    setCameraCenter((previousCenter) => (
+      areCoordinatesClose(previousCenter, nextCenter) ? previousCenter : nextCenter
+    ));
+    setCameraZoom((previousZoom) => (
+      areZoomLevelsClose(previousZoom, nextZoom) ? previousZoom : nextZoom
+    ));
+  }, []);
+
   useEffect(() => {
-    if (currentLocation !== null && currentLocation !== undefined && !showRecenterButton) {
+    if (
+      currentLocation !== null
+      && currentLocation !== undefined
+      && !hasManualCameraOverrideRef.current
+      && !isFollowingUser
+    ) {
       setIsFollowingUser(true);
     }
-  }, [currentLocation, showRecenterButton]);
+  }, [currentLocation, isFollowingUser]);
 
   useEffect(() => {
     if (!isFollowingUser) return;
-    setCameraCenter((previousCenter) => {
-      if (
-        previousCenter[0] === followTargetCenter[0]
-        && previousCenter[1] === followTargetCenter[1]
-      ) {
-        return previousCenter;
-      }
-
-      return followTargetCenter;
-    });
-  }, [followTargetCenter[0], followTargetCenter[1], isFollowingUser]);
+    applyProgrammaticCameraUpdate(followTargetCenter, cameraZoom);
+  }, [applyProgrammaticCameraUpdate, cameraZoom, followTargetCenter[0], followTargetCenter[1], isFollowingUser]);
 
   if (MapLibreGL === null) {
     return <MapUnavailablePlaceholder style={style} />;
@@ -206,11 +237,34 @@ export function RouteMap({ points, currentLocation, style, recenterBottomOffset 
     const centerCoordinate = extractCenterCoordinate(event);
     const zoomLevel = extractZoomLevel(event);
 
-    if (centerCoordinate !== null) {
-      setCameraCenter(centerCoordinate);
+    if (lastProgrammaticCameraRef.current !== null) {
+      const centerMatches = centerCoordinate === null
+        || areCoordinatesClose(centerCoordinate, lastProgrammaticCameraRef.current.center);
+      const zoomMatches = zoomLevel === null
+        || areZoomLevelsClose(zoomLevel, lastProgrammaticCameraRef.current.zoom);
+
+      if (centerMatches && zoomMatches) {
+        return;
+      }
+
+      lastProgrammaticCameraRef.current = null;
     }
-    if (zoomLevel !== null) {
-      setCameraZoom(zoomLevel);
+
+    const nextCenter = centerCoordinate ?? cameraCenter;
+    const nextZoom = zoomLevel ?? cameraZoom;
+    const centerChanged = centerCoordinate !== null && !areCoordinatesClose(centerCoordinate, cameraCenter);
+    const zoomChanged = zoomLevel !== null && !areZoomLevelsClose(zoomLevel, cameraZoom);
+
+    if (centerChanged) {
+      setCameraCenter(nextCenter);
+    }
+    if (zoomChanged) {
+      setCameraZoom(nextZoom);
+    }
+
+    if (centerChanged || zoomChanged) {
+      hasManualCameraOverrideRef.current = true;
+      setIsFollowingUser(false);
     }
 
     if (currentLocation === null || currentLocation === undefined) {
@@ -218,21 +272,17 @@ export function RouteMap({ points, currentLocation, style, recenterBottomOffset 
       return;
     }
 
-    if (centerCoordinate === null) return;
-
-    const shouldShowRecenter = isOutsideRecenterThreshold(centerCoordinate, currentLocation);
+    const shouldShowRecenter = isOutsideRecenterThreshold(nextCenter, currentLocation);
     setShowRecenterButton(shouldShowRecenter);
-    if (shouldShowRecenter) {
-      setIsFollowingUser(false);
-    }
   }
 
   function handleRecenterPress() {
     if (currentLocation === null || currentLocation === undefined) return;
 
+    hasManualCameraOverrideRef.current = false;
     setShowRecenterButton(false);
     setIsFollowingUser(true);
-    setCameraCenter([currentLocation.longitude, currentLocation.latitude]);
+    applyProgrammaticCameraUpdate([currentLocation.longitude, currentLocation.latitude], cameraZoom);
   }
 
   return (

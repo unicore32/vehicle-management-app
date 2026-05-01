@@ -1,9 +1,9 @@
-import { fireEvent, render } from '@testing-library/react-native';
 import MapLibreGL from '@maplibre/maplibre-react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { Linking } from 'react-native';
 import { RoutePreviewMap } from '../../components/gps/route-preview-map';
-import type { SessionPoint } from '../../lib/session-points-store';
 import type { SessionGap } from '../../lib/session-gaps-store';
+import type { SessionPoint } from '../../lib/session-points-store';
 
 // @maplibre/maplibre-react-native は jest.setup.ts でモック済み
 
@@ -234,5 +234,36 @@ describe('RoutePreviewMap', () => {
     expect(cameras[0].props.centerCoordinate).toEqual([139.33, 35.33]);
     expect(cameras[0].props.zoomLevel).toBe(10);
     expect(cameras[0].props.padding).toEqual({ paddingBottom: 80 });
+  });
+
+  it('ignores region change callbacks caused by playback follow updates', () => {
+    const { getByTestId, rerender, UNSAFE_getAllByType } = render(
+      <RoutePreviewMap points={basePoints} gaps={[]} currentTimestamp={2000} />,
+    );
+
+    rerender(
+      <RoutePreviewMap points={basePoints} gaps={[]} currentTimestamp={4000} />,
+    );
+
+    act(() => {
+      fireEvent(getByTestId('route-preview-map'), 'onRegionDidChange', {
+        geometry: { coordinates: [139.2, 35.2] },
+        properties: { zoomLevel: 15 },
+      });
+    });
+
+    rerender(
+      <RoutePreviewMap
+        points={basePoints}
+        gaps={[]}
+        currentTimestamp={5000}
+        cameraPaddingBottom={120}
+      />,
+    );
+
+    const cameras = UNSAFE_getAllByType(MapLibreGL.Camera);
+    expect(cameras[0].props.centerCoordinate).toEqual([139.2, 35.2]);
+    expect(cameras[0].props.zoomLevel).toBe(15);
+    expect(cameras[0].props.padding).toEqual({ paddingBottom: 120 });
   });
 });
