@@ -4,15 +4,15 @@ import { LOCATION_TASK_NAME } from '../constants/task-names';
 import { getRecordingIntervalS, RECORDING_INTERVAL_S_DEFAULT } from '../lib/app-state-store';
 import { gpsDebug } from '../lib/gps-debug';
 import { computeSessionStats } from '../lib/session-points-store';
-import {
-  createSessionRecord,
-  finishSession,
-  getActiveSession,
-  type StartSessionInput,
-  type StopSessionInput,
-  updateSessionStatus,
-} from '../lib/session-store';
 import type { CreatedSession } from '../lib/session-store';
+import {
+    createSessionRecord,
+    finishSession,
+    getActiveSession,
+    type StartSessionInput,
+    type StopSessionInput,
+    updateSessionStatus,
+} from '../lib/session-store';
 
 // ─── 権限チェック ─────────────────────────────────────────────────────────────
 

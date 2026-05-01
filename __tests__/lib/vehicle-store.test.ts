@@ -2,11 +2,11 @@ import * as SQLite from 'expo-sqlite';
 
 import { __resetDatabaseForTest } from '../../lib/database/client';
 import {
-  createVehicle,
-  getVehicle,
-  getVehicles,
-  setVehicleActive,
-  updateVehicle,
+    createVehicle,
+    getVehicle,
+    getVehicles,
+    setVehicleActive,
+    updateVehicle,
 } from '../../lib/vehicle-store';
 
 function createMockDb() {
