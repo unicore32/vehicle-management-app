@@ -6,6 +6,7 @@
 ## スコープ
 ### 対象
 - 共通のセッション用データモデル
+- 車両紐付けとメーター距離入力のための共通データモデル
 - アプリのナビゲーション構成
 - 記録フローと閲覧フローで共有する設定画面
 - GPS 関連画面で横断利用する UI コンポーネント
@@ -23,6 +24,9 @@
 - `started_at`
 - `ended_at`
 - `status` (`idle` / `recording` / `paused` / `finished`)
+- `vehicle_id`
+- `odometer_start_km`
+- `odometer_end_km`
 - `is_background_active`
 - `paused_reason`
 - `distance_m`
@@ -31,6 +35,13 @@
 - `max_speed`
 - `point_count`
 - `note`
+- `created_at`
+- `updated_at`
+
+### vehicles
+- `id`
+- `display_name`
+- `is_active`
 - `created_at`
 - `updated_at`
 
@@ -96,6 +107,8 @@
 - `RecordingControlCard`
 	- start / pause / resume / stop actions
 	- 現在の状態ラベル
+	- 開始前の車両選択と開始メーター距離入力導線
+	- 停止時の終了メーター距離入力導線
 - `RouteMap`
 	- 位置情報権限が許可されたら、Home ですぐ現在地マーカーを表示する
 	- 現在地表示の丸マーカーは 1 種類に統一し、最新記録点マーカーと重複表示しない
@@ -103,6 +116,7 @@
 	- attribution は左上に表示する
 	- 地図中心が現在地から外れたときだけ、左下付近に現在地へ戻すボタンを表示する
 	- ユーザーが地図をパンまたはズームした場合は自動追従を解除し、現在地へ戻すボタン押下時のみ追従を再開する
+	- 現在地追従や再センターでアプリ側が行うカメラ更新に伴う region change 通知だけでは、手動操作扱いにせず、自動追従解除や現在地へ戻すボタン表示を起こさない
 - Live stats row (Home 画面内のインライン表示で、別カードにはしない)
 	- 経過時間、現在速度 (km/h)、距離 (km または m)
 	- セッションが active のときだけ表示する（recording または paused）
@@ -129,6 +143,11 @@
 ### セッション詳細
 - `SessionDetailHeader`
 	- セッション日付、ステータス、サマリー
+- `SessionVehicleInfo`
+	- 車両名
+	- 開始/終了メーター距離
+	- メーター差分
+	- 編集導線
 - `RoutePreviewMap`
 	- ズーム操作
 	- attribution はセッション詳細の地図領域左上に表示する
@@ -138,6 +157,7 @@
 	- 通常区間と gap 区間を別色で表現できる
 	- playback 追従モードと手動閲覧モードを持つ
 	- ユーザーがパンまたはズームした場合は playback 追従を解除し、その操作を尊重する
+	- playback 追従やズームボタン操作でアプリ側が行うカメラ更新に伴う region change 通知だけでは、手動閲覧モードへ切り替えない
 	- ボトムシート展開による padding 変更だけではカメラ中心や縮尺をリセットしない
 - `RoutePlaybackSlider`
 	- 時間スライダーと再生位置
@@ -153,6 +173,8 @@
 	- 閾値と停止検出に関する設定
 - `BackgroundBehaviorSettings`
 	- バックグラウンド通知とログ挙動の設定
+- `VehicleManagementSettings`
+	- 車両一覧、新規追加、編集、アーカイブへの導線
 - `ExportSettings`
 	- GPX 命名規則と共有挙動
 - `DebugSettings`
@@ -175,3 +197,4 @@
 ## メモ
 - 実装は現在の SQLite-first アーキテクチャとの互換性を維持する。
 - セッションモデリングは、機能拡張を続ける前に導入する。
+- 車両管理と燃費管理の先行仕様は [specs/vehicle-fuel-management.md](specs/vehicle-fuel-management.md) を参照する。

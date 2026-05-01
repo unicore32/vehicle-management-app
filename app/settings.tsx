@@ -6,6 +6,7 @@ import { DebugSettings } from '../components/gps/debug-settings';
 import { ExportSettings } from '../components/gps/export-settings';
 import { GapDetectionSettings } from '../components/gps/gap-detection-settings';
 import { RecordingIntervalSettings } from '../components/gps/recording-interval-settings';
+import { VehicleManagementSettings } from '../components/gps/vehicle-management-settings';
 
 export default function SettingsScreen() {
   return (
@@ -13,6 +14,8 @@ export default function SettingsScreen() {
       <Stack.Screen options={{ headerShown: true, title: '設定' }} />
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
         <RecordingIntervalSettings />
+        <View style={styles.divider} />
+        <VehicleManagementSettings />
         <View style={styles.divider} />
         <AutoPauseSettings />
         <View style={styles.divider} />

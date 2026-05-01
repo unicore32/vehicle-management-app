@@ -173,6 +173,38 @@ describe('RouteMap', () => {
     expect(cameras[0].props.zoomLevel).toBe(12);
   });
 
+  it('ignores region change callbacks caused by programmatic follow updates', () => {
+    const currentLocation = { latitude: 35.5, longitude: 139.5 };
+    const { getByTestId, queryByTestId, rerender } = render(
+      <RouteMap points={[]} currentLocation={currentLocation} />,
+    );
+
+    rerender(
+      <RouteMap
+        points={[]}
+        currentLocation={{ latitude: 35.6, longitude: 139.6 }}
+      />,
+    );
+
+    act(() => {
+      getByTestId('route-map').props.onRegionDidChange({
+        geometry: { coordinates: [139.6, 35.6] },
+        properties: { zoomLevel: 16 },
+      });
+    });
+
+    rerender(
+      <RouteMap
+        points={[]}
+        currentLocation={{ latitude: 35.7, longitude: 139.7 }}
+      />,
+    );
+
+    expect(queryByTestId('route-map-recenter-button')).toBeNull();
+    const cameras = getByTestId('route-map-camera');
+    expect(cameras.props.centerCoordinate).toEqual([139.7, 35.7]);
+  });
+
   it('does not render a CircleLayer when there are no points', () => {
     const { UNSAFE_queryAllByType } = render(<RouteMap points={[]} />);
     const circles = UNSAFE_queryAllByType(MapLibreGL.CircleLayer);

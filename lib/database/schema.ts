@@ -1,3 +1,20 @@
+// ─── vehicles ────────────────────────────────────────────────────────────────
+
+export const CREATE_VEHICLES_TABLE = `
+  CREATE TABLE IF NOT EXISTS vehicles (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name TEXT    NOT NULL,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+  );
+` as const;
+
+export const CREATE_VEHICLES_ACTIVE_INDEX = `
+  CREATE INDEX IF NOT EXISTS idx_vehicles_is_active
+    ON vehicles (is_active, updated_at DESC);
+` as const;
+
 // ─── sessions ─────────────────────────────────────────────────────────────────
 
 /**
@@ -11,6 +28,9 @@ export const CREATE_SESSIONS_TABLE = `
     ended_at             INTEGER,
     status               TEXT    NOT NULL DEFAULT 'recording'
                            CHECK (status IN ('recording', 'paused', 'finished')),
+    vehicle_id           INTEGER REFERENCES vehicles(id) ON DELETE SET NULL,
+    odometer_start_km    INTEGER,
+    odometer_end_km      INTEGER,
     is_background_active INTEGER NOT NULL DEFAULT 0,
     paused_reason        TEXT,
     distance_m           REAL    NOT NULL DEFAULT 0,
@@ -30,6 +50,10 @@ export const CREATE_SESSIONS_STATUS_INDEX = `
 
 export const CREATE_SESSIONS_STARTED_AT_INDEX = `
   CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions (started_at DESC);
+` as const;
+
+export const CREATE_SESSIONS_VEHICLE_ID_INDEX = `
+  CREATE INDEX IF NOT EXISTS idx_sessions_vehicle_id ON sessions (vehicle_id);
 ` as const;
 
 // ─── session_points ────────────────────────────────────────────────────────────

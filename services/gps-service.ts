@@ -8,6 +8,8 @@ import {
   createSessionRecord,
   finishSession,
   getActiveSession,
+  type StartSessionInput,
+  type StopSessionInput,
   updateSessionStatus,
 } from '../lib/session-store';
 import type { CreatedSession } from '../lib/session-store';
@@ -68,9 +70,9 @@ async function stopLocationUpdates(): Promise<void> {
  * @returns 作成したセッションの ID と開始時刻
  * @throws 位置情報権限が拒否された場合
  */
-export async function startRecordingService(): Promise<CreatedSession> {
+export async function startRecordingService(input?: StartSessionInput): Promise<CreatedSession> {
   await requestLocationPermissions();
-  const session = await createSessionRecord();
+  const session = await createSessionRecord(input);
   gpsDebug('recording started', { sessionId: session.id });
   await startLocationUpdates();
   return session;
@@ -109,10 +111,13 @@ export async function resumeRecordingService(sessionId: number): Promise<void> {
  *
  * @param sessionId 対象セッション ID
  */
-export async function stopRecordingService(sessionId: number): Promise<void> {
+export async function stopRecordingService(
+  sessionId: number,
+  input?: StopSessionInput,
+): Promise<void> {
   await stopLocationUpdates();
   const stats = await computeSessionStats(sessionId);
-  await finishSession(sessionId, stats);
+  await finishSession(sessionId, stats, input);
   gpsDebug('recording stopped', { sessionId, stats });
 }
 

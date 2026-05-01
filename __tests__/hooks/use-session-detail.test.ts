@@ -13,6 +13,7 @@ import type { SessionGap } from '../../lib/session-gaps-store';
 jest.mock('../../lib/session-store', () => ({
   getSession: jest.fn(),
   deleteSession: jest.fn(),
+  updateSessionVehicleInfo: jest.fn(),
 }));
 jest.mock('../../lib/session-points-store', () => ({
   getSessionPoints: jest.fn(),
@@ -34,6 +35,9 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     started_at: 1_700_000_000_000,
     ended_at: 1_700_003_600_000,
     status: 'finished',
+    vehicle_id: null,
+    odometer_start_km: null,
+    odometer_end_km: null,
     is_background_active: 0,
     paused_reason: null,
     distance_m: 5000,

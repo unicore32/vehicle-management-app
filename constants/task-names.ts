@@ -9,3 +9,6 @@ export const SESSION_POINTS_QUERY_KEY = 'session_points' as const;
 
 /** セッション詳細 TanStack Query キャッシュキー */
 export const SESSION_DETAIL_QUERY_KEY = 'session_detail' as const;
+
+/** 車両一覧 TanStack Query キャッシュキー */
+export const VEHICLES_QUERY_KEY = 'vehicles' as const;

@@ -55,6 +55,10 @@ export default function RootLayout() {
                 options={{ headerShown: true, title: 'セッション一覧' }}
               />
               <Stack.Screen name="settings" />
+              <Stack.Screen
+                name="vehicles"
+                options={{ headerShown: true, title: '車両管理' }}
+              />
               {/* Phase 4: セッション詳細 */}
               <Stack.Screen
                 name="session/[id]"

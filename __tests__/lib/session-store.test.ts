@@ -5,6 +5,7 @@ import {
   createSessionRecord,
   updateSessionStatus,
   finishSession,
+  updateSessionVehicleInfo,
   setBackgroundActive,
   deleteSession,
   getActiveSession,
@@ -46,6 +47,9 @@ describe('createSession', () => {
     expect(mockDb.runAsync).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO sessions'),
       expect.any(Number),
+      null,
+      null,
+      null,
       expect.any(Number),
       expect.any(Number),
     );
@@ -69,6 +73,20 @@ describe('createSessionRecord', () => {
       id: 7,
       started_at: expect.any(Number),
     });
+  });
+
+  it('stores vehicle and start odometer when provided', async () => {
+    await createSessionRecord({ vehicleId: 4, odometerStartKm: 12345 });
+
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('vehicle_id'),
+      expect.any(Number),
+      4,
+      12345,
+      null,
+      expect.any(Number),
+      expect.any(Number),
+    );
   });
 });
 
@@ -117,6 +135,7 @@ describe('finishSession', () => {
     expect(mockDb.runAsync).toHaveBeenCalledWith(
       expect.stringContaining('finished'),
       expect.any(Number), // ended_at
+      null,
       1500,
       300,
       5,
@@ -124,6 +143,107 @@ describe('finishSession', () => {
       60,
       expect.any(Number), // updated_at
       3,
+    );
+  });
+
+  it('rejects when end odometer is smaller than the recorded start odometer', async () => {
+    const stats: SessionStats = {
+      distance_m: 1500,
+      moving_time_s: 300,
+      avg_speed: 5,
+      max_speed: 15,
+      point_count: 60,
+    };
+    mockDb.getFirstAsync.mockResolvedValue({
+      vehicle_id: 9,
+      odometer_start_km: 12000,
+    });
+
+    await expect(
+      finishSession(3, stats, { odometerEndKm: 11999 }),
+    ).rejects.toThrow('終了メーター距離は開始メーター距離以上にしてください');
+  });
+
+  it('rejects when end odometer is provided for a session without vehicle', async () => {
+    const stats: SessionStats = {
+      distance_m: 1500,
+      moving_time_s: 300,
+      avg_speed: 5,
+      max_speed: 15,
+      point_count: 60,
+    };
+    mockDb.getFirstAsync.mockResolvedValue({
+      vehicle_id: null,
+      odometer_start_km: 12000,
+    });
+
+    await expect(
+      finishSession(3, stats, { odometerEndKm: 12001 }),
+    ).rejects.toThrow('車両未選択のセッションには終了メーター距離を保存できません');
+  });
+
+  it('writes the end odometer when provided', async () => {
+    const stats: SessionStats = {
+      distance_m: 1500,
+      moving_time_s: 300,
+      avg_speed: 5,
+      max_speed: 15,
+      point_count: 60,
+    };
+    mockDb.getFirstAsync.mockResolvedValue({
+      vehicle_id: 3,
+      odometer_start_km: 12400,
+    });
+
+    await finishSession(3, stats, { odometerEndKm: 12420 });
+
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('odometer_end_km'),
+      expect.any(Number),
+      12420,
+      1500,
+      300,
+      5,
+      15,
+      60,
+      expect.any(Number),
+      3,
+    );
+  });
+});
+
+describe('updateSessionVehicleInfo', () => {
+  it('updates vehicle and odometer values', async () => {
+    await updateSessionVehicleInfo(8, {
+      vehicleId: 2,
+      odometerStartKm: 12000,
+      odometerEndKm: 12044,
+    });
+
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('vehicle_id = ?'),
+      2,
+      12000,
+      12044,
+      expect.any(Number),
+      8,
+    );
+  });
+
+  it('clears odometer values when vehicle is unset', async () => {
+    await updateSessionVehicleInfo(8, {
+      vehicleId: null,
+      odometerStartKm: 12000,
+      odometerEndKm: 12044,
+    });
+
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('vehicle_id = ?'),
+      null,
+      null,
+      null,
+      expect.any(Number),
+      8,
     );
   });
 });
@@ -178,6 +298,7 @@ describe('getActiveSession', () => {
 
     expect(result).toEqual(session);
     const sql = (mockDb.getFirstAsync.mock.calls[0] as unknown[])[0] as string;
+    expect(sql).toContain('LEFT JOIN vehicles');
     expect(sql).toContain("status IN ('recording', 'paused')");
   });
 
@@ -201,7 +322,7 @@ describe('getSession', () => {
 
     expect(result).toEqual(session);
     expect(mockDb.getFirstAsync).toHaveBeenCalledWith(
-      'SELECT * FROM sessions WHERE id = ?',
+      expect.stringContaining('WHERE sessions.id = ?'),
       2,
     );
   });
@@ -223,8 +344,11 @@ describe('getSessions', () => {
     const result = await getSessions();
 
     expect(result).toEqual(sessions);
-    const sql = (mockDb.getAllAsync.mock.calls[0] as unknown[])[0] as string;
-    expect(sql).toContain('ORDER BY started_at DESC');
+    const sql = mockDb.getAllAsync.mock.calls
+      .map((call) => call[0] as string)
+      .find((statement) => statement.includes('LEFT JOIN vehicles'));
+    expect(sql).toContain('LEFT JOIN vehicles');
+    expect(sql).toContain('ORDER BY sessions.started_at DESC');
   });
 
   it('applies LIMIT when specified', async () => {
