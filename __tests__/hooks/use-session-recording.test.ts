@@ -1,6 +1,6 @@
-import React from 'react';
-import { renderHook, act, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
+import React from 'react';
 import { useSessionRecording } from '../../hooks/use-session-recording';
 import type { Session } from '../../lib/session-store';
 
@@ -19,8 +19,8 @@ jest.mock('../../lib/session-store', () => ({
   updateSessionStatus: jest.fn(),
 }));
 
-import * as gpsService   from '../../services/gps-service';
 import * as sessionStore from '../../lib/session-store';
+import * as gpsService from '../../services/gps-service';
 
 // ─── ヘルパー ─────────────────────────────────────────────────────────────────
 

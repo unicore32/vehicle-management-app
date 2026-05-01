@@ -1,14 +1,14 @@
-import { renderHook, waitFor, act } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
-import { useSessionDetail, useDeleteSession } from '../../hooks/use-session-detail';
-import * as sessionStore from '../../lib/session-store';
-import * as pointsStore from '../../lib/session-points-store';
-import * as gapsStore from '../../lib/session-gaps-store';
-import type { Session } from '../../lib/session-store';
-import type { SessionPoint } from '../../lib/session-points-store';
+import { useDeleteSession, useSessionDetail } from '../../hooks/use-session-detail';
 import type { SessionGap } from '../../lib/session-gaps-store';
+import * as gapsStore from '../../lib/session-gaps-store';
+import type { SessionPoint } from '../../lib/session-points-store';
+import * as pointsStore from '../../lib/session-points-store';
+import type { Session } from '../../lib/session-store';
+import * as sessionStore from '../../lib/session-store';
 
 jest.mock('../../lib/session-store', () => ({
   getSession: jest.fn(),
