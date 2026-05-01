@@ -1,14 +1,14 @@
 import * as SQLite from 'expo-sqlite';
 import { __resetDatabaseForTest } from '../../lib/database/client';
 import {
-  insertSessionPoints,
-  getSessionPoints,
-  getRecentSessionPoints,
-  getLatestSessionPoint,
-  getSessionPointCount,
-  computeSessionStats,
-  computeLiveDistance,
-  type SessionPointInput,
+    computeLiveDistance,
+    computeSessionStats,
+    getLatestSessionPoint,
+    getRecentSessionPoints,
+    getSessionPointCount,
+    getSessionPoints,
+    insertSessionPoints,
+    type SessionPointInput,
 } from '../../lib/session-points-store';
 
 // ─── モックDB ─────────────────────────────────────────────────────────────────

@@ -1,23 +1,23 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { useState } from 'react';
 import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    Modal,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from 'react-native';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { VEHICLES_QUERY_KEY } from '../constants/task-names';
 import {
-  createVehicle,
-  getVehicles,
-  setVehicleActive,
-  updateVehicle,
-  type Vehicle,
+    createVehicle,
+    getVehicles,
+    setVehicleActive,
+    updateVehicle,
+    type Vehicle,
 } from '../lib/vehicle-store';
 
 type EditorState = {

@@ -1,19 +1,19 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  startRecordingService,
-  pauseRecordingService,
-  resumeRecordingService,
-  stopRecordingService,
-  isBackgroundTaskRunning,
-  getActiveSession,
-} from '../services/gps-service';
-import {
-  updateSessionStatus,
-  type StartSessionInput,
-  type StopSessionInput,
-} from '../lib/session-store';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SESSION_POINTS_QUERY_KEY, SESSION_QUERY_KEY } from '../constants/task-names';
+import {
+    updateSessionStatus,
+    type StartSessionInput,
+    type StopSessionInput,
+} from '../lib/session-store';
+import {
+    getActiveSession,
+    isBackgroundTaskRunning,
+    pauseRecordingService,
+    resumeRecordingService,
+    startRecordingService,
+    stopRecordingService,
+} from '../services/gps-service';
 
 /** 自動一時停止検知のポーリング間隔 [ms] */
 const AUTO_PAUSE_POLL_INTERVAL = 5_000;

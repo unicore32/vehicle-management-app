@@ -1,10 +1,10 @@
-import { renderHook, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { renderHook, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import { useSessionList } from '../../hooks/use-session-list';
-import * as sessionStore from '../../lib/session-store';
 import type { Session } from '../../lib/session-store';
+import * as sessionStore from '../../lib/session-store';
 
 jest.mock('../../lib/session-store', () => ({
   getSessions: jest.fn(),

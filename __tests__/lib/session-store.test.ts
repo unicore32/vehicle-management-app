@@ -1,19 +1,19 @@
 import * as SQLite from 'expo-sqlite';
 import { __resetDatabaseForTest } from '../../lib/database/client';
 import {
-  createSession,
-  createSessionRecord,
-  updateSessionStatus,
-  finishSession,
-  updateSessionVehicleInfo,
-  setBackgroundActive,
-  deleteSession,
-  getActiveSession,
-  getSession,
-  getSessions,
-  getFinishedSessionCount,
-  type Session,
-  type SessionStats,
+    createSession,
+    createSessionRecord,
+    deleteSession,
+    finishSession,
+    getActiveSession,
+    getFinishedSessionCount,
+    getSession,
+    getSessions,
+    setBackgroundActive,
+    updateSessionStatus,
+    updateSessionVehicleInfo,
+    type Session,
+    type SessionStats,
 } from '../../lib/session-store';
 
 // ─── モックDB ヘルパー ──────────────────────────────────────────────────────────

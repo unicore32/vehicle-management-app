@@ -15,15 +15,15 @@ import { ConfirmDialog } from '../../components/shared/confirm-dialog';
 import { ErrorState } from '../../components/shared/error-state';
 import { LoadingState } from '../../components/shared/loading-state';
 import {
-  getTileAttribution,
-  getTileAttributionUrl,
-  resolveTileServerKey,
+    getTileAttribution,
+    getTileAttributionUrl,
+    resolveTileServerKey,
 } from '../../constants/map-config';
 import { SESSION_DETAIL_QUERY_KEY, VEHICLES_QUERY_KEY } from '../../constants/task-names';
 import {
-  useDeleteSession,
-  useSessionDetail,
-  useUpdateSessionVehicleInfo,
+    useDeleteSession,
+    useSessionDetail,
+    useUpdateSessionVehicleInfo,
 } from '../../hooks/use-session-detail';
 import { useSessionPlayback } from '../../hooks/use-session-playback';
 import { exportGpx } from '../../lib/gpx-export';
